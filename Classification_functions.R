@@ -108,26 +108,80 @@ PlotHists <- function( stack_dat ) {
 }
 
 #---- Four layers that needed some work. ----
-#Includes 4: julBS_ave, julSS_min, julSSpd_ave, tidal_cur
-MakeMoreNormal <- function( the_stack, t_list ){
+#Includes 10 of 17: 
+#   julBT_min, julBS_min, julSS_min, julSS_max,
+#   julBSpd_min, julBSpd_max, julSSpd_min, julSSpd_max,
+#   roughness, tidal_cur
 
-  x <- the_stack[, "julBS_ave"]
-  y <- asin(x/max(x))
-  the_stack[, "julBS_ave"] <- y
+# Test transforms first ... 
+# x <- stack_data[, "julSS_min"]
+# #summary(x)
+# #hist(x)
+# skewness(x, na.rm = TRUE)
+# 
+# floor <- 10
+# y <- ifelse(x > floor, x, floor)
+# 
+# #y <- asin(x)
+# #y <- log(y)
+# y <- x^3
+# 
+# skewness(y, na.rm = TRUE)
+# hist(y)
+
+
+MakeMoreNormal <- function( the_stack, t_list ){
+#  asin(x/max(x))
+#  log(x)
+  x <- the_stack[, "julBT_min"]
+  y <- x^2
+  the_stack[, "julBT_min"] <- y 
   
+  x <- the_stack[, "julBS_min"]
+  y <- x^3
+  the_stack[, "julBS_min"] <- y
+
   x <- the_stack[, "julSS_min"]
   y <- x^3
   the_stack[, "julSS_min"] <- y
   
-  x <- the_stack[, "julSSpd_ave"]
-  y <- x^(1/2)
-  the_stack[, "julSSpd_ave"] <- y
+  x <- the_stack[, "julSS_max"]
+  floor <- 25
+  y <- ifelse(x > floor, x, floor)
+  y <- y^5
+  the_stack[, "julSS_max"] <- y
+  
+  
+  x <- the_stack[, "julBSpd_min"]
+  y <- log(x)
+  the_stack[, "julBSpd_min"] <- y
+  
+  x <- the_stack[, "julBSpd_max"]
+  y <- log(x)
+  the_stack[, "julBSpd_max"] <- y
+
+  x <- the_stack[, "julSSpd_min"]
+  y <- log(x)
+  the_stack[, "julSSpd_min"] <- y
+
+  x <- the_stack[, "julSSpd_max"]
+  y <- log(x)
+  the_stack[, "julSSpd_max"] <- y
+  
+  
+  x <- the_stack[, "roughness"]
+  ceil <- 100
+  y <- ifelse(x > ceil, ceil, x)
+  y <- log(y+1)
+  the_stack[, "roughness"] <- y
   
   x <- the_stack[, "tidal_cur"]
-  y <- x^(1/2)
+  ceil <- 1
+  y <- ifelse(x > ceil, ceil, x)
+  y <- log(y)
   the_stack[, "tidal_cur"] <- y
   
-  return( the_stack) 
+  return(the_stack) 
 }
 
 #---- MakeScreePlot: returns a ggplot. ----

@@ -1,5 +1,5 @@
 #################################################################################
-# Script:  Broughton_main_LSSM.R - Broughton LSSM version
+# Script:  Classification_main_LSSM.R - Broughton LSSM version
 # Created: February 2024. EJG
 # 
 # This script sources the necessary libraries and functions, coordinates the 
@@ -24,13 +24,19 @@
 #  - 2 key bits to integrate: distributions and scaling, and RMD report.
 # 2024/09/22: Lots of RMD work. Acceptable PDF report of cluster methods/results.
 #  - GIT Repos and scripts renamed for clarity.
+# 2024/10/02: Further updates to RMD. Can now run reasonable cluster reports.
+#  - exercising thoroughness by examining full basket of predictors ... 
+# 2024/10/04: Formal walk-thru to winnow predicturs.
+
 
 # TO DO: 
 #  1. Reproduce (ish) Romina - use as prototype
 #  2. Combine attributes and develop update plan
-#  3. Spend a TINY bit of time to see if MSEA data can "improve" fit.
-#  Add config section to allow repeated clusterings to be attached to same RMD report
-######################################################################################
+#  3. Add substrate as BINARY to create hard/soft specific clusters. 
+#  4. Spend a TINY bit of time to see if MSEA data can "improve" fit.
+#  5. Configure so repeated clusterings of same data can be attached to same RMD report
+#     OR probably  easier by hand, post-hoc.
+#######################################################################################
 
 print('Starting Classification  ... LSSM Version')
 rm(list=ls(all=T))  # Erase environment.
@@ -46,9 +52,8 @@ data_dir   <- 'C:/Data/Git/Classification-LSSM/Data'
 results_dir<- 'C:/Data/Git/Classification-LSSM/Results' 
 
 # Processing FLAGS...
-loadtifs <- T # If true the data will be re-loaded from TIFs, else it will be loaded from rData.
-clipdata <- F # If true a spatial subset of the data will be taken based on a polygon shape file. 
-scaledat <- F # If true, imported data will be scaled using raster::scale().
+loadtifs <- F # If true the data will be re-loaded from TIFs, else it will be loaded from rData.
+clipdata <- T # If true a spatial subset of the data will be taken based on a polygon shape file. 
 reclust  <- T # If true, re-cluster full data set prior to mapping, else predict to unclassified pixels.
 
 #---- Part 1 of 3: Load, clean, and prepare predictor data.  ----
@@ -75,64 +80,78 @@ if (loadtifs) {
 # Romina's Ocean TIFs already trimmed to 40 m and did not contain any land.  
 # IF we want to include any DFO data it will need to match Romina's spatial reference.
 
-  if (scaledat) {
-    print( "Scaling TIFs ... ")
-    tmp_stack <- scale( tif_stack )
-    tif_stack <- tmp_stack
-    print('Rasters Scaled.')
-  }
-  
-  save( src_stack, file = paste0( data_dir, '/src_stack_', today, '.rData' ))
-  save( tif_stack, file = paste0( data_dir, '/tif_stack_', today, '.rData' ))
-  save( tif_stack, file = paste0( data_dir, '/tifs_SPECTRAL_scaled_', today, '.rData' ))
+  save( tif_stack, file = paste0( data_dir, '/tifs_SPECTRAL_clipped_', today, '.rData' ))
   
 } else {
   print( 'Loading project data ... ')
   # Ideally meaningfully named and tested so no source is required.
-  load( paste0( data_dir, '/tifs_SPECTRAL_scaled_2024-08-14.rData' ))
+  load( paste0( data_dir, '/tifs_SPECTRAL_clipped_2024-10-04.rData' ))
 }
 
-# Standardize rasters spatially (i.e., trim northness and wind to ocean layers)
 
-# Move to matrix space from raster space 
-stack_data <- getValues( tif_stack )
+stack_data <- getValues( tif_stack)
+print( "Check skew and transform the data  ... ")
+# Transform those predictors with abs(skew) > 1. 
+#Includes 10 of 17: 
+#   julBT_min, julBS_min, julSS_min, julSS_max,
+#   julBSpd_min, julBSpd_max, julSSpd_min, julSSpd_max,
+#   roughness, tidal_cur
 
-#-- Quick correlation across data layers
-x <- stack_data
+t_stack <- MakeMoreNormal(stack_data, trans )
+
+skdat <- data.frame(Predictor = character(), Pre_Skew = numeric(), Post_Skew = numeric(), 
+                    stringsAsFactors = FALSE)
+
+for (i in 1:ncol(stack_data)) {
+  # Calculate skewness for each column in both datasets
+  pre  <- skewness(stack_data[, i], na.rm = TRUE) 
+  post <- skewness(t_stack[, i], na.rm = TRUE)
+  
+  # Combine the column name and skewness values into a new data frame row
+  new_row <- data.frame(
+    Predictor = colnames(stack_data)[i],  # Get column name
+    Pre_Skew  = round(pre, 3),            # Skewness before transformation
+    Post_Skew = round(post, 3)            # Skewness after transformation
+  )
+  # Append the new row to skdat
+  skdat <- rbind(skdat, new_row)
+}
+skdat
+
+# Scale and center the transformed data.
+print("Centering and scaling  ... ")
+tmp_stack <- scale(t_stack, center = T,  scale = T)
+t_stack_data <- as.data.frame(tmp_stack)
+print('Data centered.')
+
+# A quick correlation across data layers
+x <- t_stack_data
 x_clean <- x[ complete.cases(x), ]
 cor_table <- cor( x_clean )
 cor_table[lower.tri(cor_table)] <- NA
-(cor_table >= 0.6) & (cor_table != 1)
+b_cor <- (cor_table >= 0.6) & (cor_table != 1)
+sum( b_cor, na.rm=T)
 
-# Drop correlated layers layers from the SPECRAL data set
-selected_stack <- dropLayer( tif_stack, c("julST_ave", "julSS_ave", "julBSpd_ave", "northness") )
-names( selected_stack )
+# Drop correlated layers from the SPECTRAL data set
 
-stack_data <- getValues( selected_stack )
+
+#selected_stack <- dropLayer( tif_stack, c("roughness", "northness","julST_ave","julSS_ave", "julBSpd_ave") )
+
+# selected_stack <- dropLayer( tif_stack, c("aspect", "roughness",
+#                                           "julBS_min", "julSS_ave",
+#                                           "julST_min", "julST_ave",
+#                                           "julSSpd_min", "julSSpd_max",
+#                                           "julBSpd_min", "julBSpd_ave", "julBSpd_max") )
 
 # remove any rows with an NA
 # NB: This decouples the data from the RasterStack and requires re-assembly for mapping
 # THESE are the two key data structures used in subsequent steps
-clean_idx <- complete.cases(stack_data)
-stack_data_clean <- stack_data[ clean_idx, ]
+clean_idx <- complete.cases(t_stack_data)
+stack_data_clean <- t_stack_data[ clean_idx, ]
 
-dim( stack_data )
+dim( t_stack_data )
 dim( stack_data_clean )
 
-# Transform and scale the data for k-means classification.
-
-print( "Transforming data  ... ")
-  # Transform those predictors with abs(skew) > 1. 
-  #Includes 4: julBS_ave, julSS_min, julSSpd_ave, tidal_cur
-t_stack_data <- MakeMoreNormal(stack_data_clean)
-
-print("Centering and scaling  ... ")
-tmp_stack <- scale(t_stack_data, center = T,  scale = T)
-t_stack_data <- tmp_stack
-print('Data prepped.')
-#save(t_stack_data,
-#     file = paste0(data_dir, '/t_stack_data', today, '.rData'))
-#print('Scaled data saved.')
 
 #---- Part 2 of 3: Cluster number selection ----
 
@@ -145,15 +164,15 @@ imax     <- 25 # maximum iterations to try for convergence
 
 nclust   <- 18 # number of clusters for scree plot
 nsample  <- 25000 # Scree plot needs a subsample to run reasonably. 
-plotme <- MakeScreePlot( t_stack_data, nclust, randomz, imax, nsample )
+plotme <- MakeScreePlot( stack_data_clean, nclust, randomz, imax, nsample )
 plotme
 
 #---- Create a working set of N clusters (N based on scree plot) to further assess cluster number. ----
 
-nclust  <- 5 # the number of clusters based on scree plot, above.
+nclust  <- 6 # the number of clusters based on scree plot, above.
 nsample <- 500000 # a larger sample for more robust classification
 
-sidx <- sample( 1:length( t_stack_data[ , 1] ), nsample )
+sidx <- sample( 1:length( stack_data_clean[ , 1] ), nsample )
 samp <- stack_data_clean[ sidx, ]
 cluster_result <- kmeans(samp, centers=nclust, nstart=randomz, iter.max=imax) 
 
@@ -238,14 +257,14 @@ vplots
 #     b) Predict to the unsampled portion of the raster. 
 
 # initialize target data structure 
-cluster_raster <- selected_stack[[1]]
+cluster_raster <- tif_stack[[1]]
 dataType(cluster_raster) <- "INT1U"
 cluster_raster[] <- NA
 
 if (reclust == T) {
   # Re-cluster using all the clean data  ... 
   # less than 1 min with iter.max = 20, nstart = 20 for smallest region
-  cluster_result <- kmeans(t_stack_data, centers = nclust, nstart = randomz, iter.max = imax)
+  cluster_result <- kmeans(stack_data_clean, centers = nclust, nstart = randomz, iter.max = imax)
   
   # Assign the clustered values ... 
   # extract values from the target cluster
@@ -274,18 +293,18 @@ z_map <- levelplot( cluster_raster, margin = F,
            par.settings = myTheme,
            main = "K-means Clustering Result - Local extents" )
 z_map
-writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_5cluster.tif"), overwrite=TRUE)
+writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_17v_6cluster.tif"), overwrite=TRUE)
 
 
 #---- Knit and render Markdown file to PDF -----
 # First had to install the library tinytex.
 # then run >tinytex::install_tinytex()
 # ... and done. 
-rmarkdown::render( "Broughton_LSSM_PDF.Rmd",   
-#rmarkdown::render( "Broughton_test.Rmd",   
-                                      output_format = 'pdf_document',
-                   output_dir ="C:/Data/Git/Broughton_LSSM/Results",
-                   output_file = paste0( "LSSM_SPECtrim_5cluster_", today ))
+rmarkdown::render( "Classification_LSSM_PDF.Rmd",   
+#rmarkdown::render( "Classification_test.Rmd",   
+                   output_format = 'pdf_document',
+                   output_dir    = results_dir,
+                   output_file = paste0( "LSSM_SPECtrim_17v_6cluster_", today ))
 
 
 #---- Some details on correlation analysis ... ----

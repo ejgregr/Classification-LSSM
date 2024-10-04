@@ -33,18 +33,36 @@ header-includes:
 # Introduction
 This work follows the approach described in Gregr (2024a) where k-means is applied to DFO MSEA data to create a spatial structure to support marine use planning initiatives. In the absence of an empirical representation for data-poor species, clusters describing areas of similar environmental conditions to be used as a framework to collate existing information on the distribution of kelp and other nearshore benthic species. 
 
-This application uses oceanographic predictors output from an ocean circulation model (Bianucci et al. 20XX). These predictors describe average ocean conditions for the month of July. 
+This application uses oceanographic predictors produced by an ocean circulation model (Bianucci et al. 20XX). These predictors describe average ocean conditions for the months of January and July. 
 
-The code assumes the TIFs are in the same projection, but imposes a common extent and resolutionto ensure all inputs have identical spatial configurations. 
+## Background
+Romina prepared Laura's data for her classifications, which will be compared to SDMs.
+See Gregr (2024a) for details on the methods and the k-means classification (move here eventually). 
 
-See Gregr (2024a) for details on the methods and the k-means classification.
+# Data sources
+The output from the Bianucci model has been pre-processed by Barbosa, who also used the 20 m DFO bathymetry to derive some physical predictors. She also explored the potential for nutrient estimates from LiveOcean (presumably from sattelite) but these did not match the in situ measurements *(what are the available in situ measurements?*. Wind is also included and was sourced from the Global Wind Atlas, which provides downscaled re-analysis data on 250 m square grid (more details at https://globalwindatlas.info/en/about/introduction).
+
+Barbosa used bathymetry as a mask to limit classification to < 40 m depth. However, experience in the region suggests nereo does not reach the surface from depths > 15 m (Romina, pers. comm.).
 
 # Methods
-After standardizing the spatial representation of the source data, the data are normalized and scaled, and clipped to a reduced spatial extent if desired. Correlations are examined and Where predictors are cross-correlated > 0.6, one of them is removed.
+##Predictor screening
+The pool of potential predictors was large (n=53). These were pre-screened by examining correlations and preliminary performance in the k-means clusters. 
 
-Clusters are then generated from samples, as the data can be quite large. This can lead to the emergence of different clusters unless, as here, a seed is specified. However, the clusters still end up different each time as the algorithm itself chooses a new starting point at random for each cluster whenever its run. Final clusters can be created using the full data set. 
+Following Barbosa et al., bathymetry was used to limit the analysis to suitable depths and allow the cluster analysis to focus on the photic zone. Bathymetric derivatives were not considered here, as preliminary performance tests showed very high leverage (e.g., aspect).
 
-The working clusters are  then examined in a variety of ways including:
+*Add substrate to partition analysis between hard and soft substrates.*
+
+## Predictor preparation
+Pre-selected predictors were then clipped to a reduced spatial extent if desired (e.g., to avoid areas of questionable data). Predictors with high skewness identified and normalized if necessary. The results were then scaled (by dividing by the standard deviation) and centred, followed by a final check of correlations. Where predictors were cross-correlated > 0.6, one of them is removed. 
+
+Finally, the predictors are limited to cells where data exists for all predictors. This is done after the data are cleaned because the all-data filtering should be sampling from clean distributions of each predictor, not a driver of the cleaning. If you know what I mean.
+
+## Cluster analysis
+Skewnesss plots were used to suggest the number of clusters. Multiple analyses were generated with a different number of clusters and compared qualitatively. 
+
+Clusters were generated from subsets sampled from the full data set, as the data can be quite large. Despite using a seed to ensure the same sub-sample is used, repeating a classification can still yield different results as the algorithm itself (independent of the seed) chooses a new starting point at random for each cluster whenever its run. Final clusters can be created for the subset data, or for the full data set. 
+
+The working clusters were then examined in a variety of ways including:
 1.	A heat map of the within cluster sum of squares. 
 2.	Silhouette plots of the clusters 
 Silhouette plots provide information on how observations fit their clusters. Generally, the higher the average width of each clusters the better. 
@@ -52,8 +70,10 @@ Silhouette plots provide information on how observations fit their clusters. Gen
 4.	violin plots showing the predictor contributions to each cluster
 
 
-# Data sources
-The output from the Bianucci model has been pre-processed by Barbosa (Table 1). 
+# Results 
+##Selected predictors
+
+The selected predictors (Table 1) ... 
 
 ```{r, DescripTable, echo=FALSE, escape=FALSE}
 library(knitr)
@@ -73,21 +93,19 @@ descrip_table <- data.frame(
 kable(descrip_table, format = "latex", booktabs = TRUE, 
       caption = "The predictors available from DFO’s MSEA group for different potential drivers of kelp habitat suitability, and the rationale for their inclusion.")  %>%
   kable_styling() %>%
-  column_spec(1, width = "1.5in", latex_column_spec = "p{1.5in}") %>% 
+  column_spec(1, width = "1.3in", latex_column_spec = "p{1.3in}") %>% 
   column_spec(2, width = "1in", latex_column_spec = "p{1in}") %>% 
-  column_spec(3, width = "3.6in", latex_column_spec = "p{3.6in}")     
+  column_spec(3, width = "3.8in", latex_column_spec = "p{3.8in}")     
 
 ```
 
-As part of the pre-processing, Barbosa et al. removed unsuitable depths from the source data to focus the clustering on the photic zone. 
-
-*Add substrate to remove soft and sand substrate*
+##Selected predictors
 
 # Results 
 
 ## Data description
 
-The loaded Raster stack is `r dim(selected_stack)[1]` by `r dim(selected_stack)[2]`, giving a total of `r scales::comma( dim(selected_stack)[1] * dim(selected_stack)[2])` pixels in the study domain. Much of this area is land, or deeper waters excluded by the bathymetry.
+The loaded (and potentially trimmed) raster stack is `r dim(tif_stack)[1]` by `r dim(tif_stack)[2]`, giving a total of `r scales::comma( dim(tif_stack)[1] * dim(tif_stack)[2])` pixels in the study domain. Much of this area is land, or deeper waters excluded by the bathymetry.
 
 *Include: proportion nearshore, proportion of that with good substrate, and final sample size for clustering.* 
 
@@ -114,7 +132,7 @@ x <- 0.6
 high_rows <- apply(cor_table, 1, function(row) any(row > x, na.rm = TRUE))
 z <- cor_table[ high_rows, ]
 knitr::kable( z, digits = 2, format = "latex", booktabs = TRUE, 
-              caption = "Predictor variables that exceed 0.6 threshold") %>%
+              caption = "Predictor variables with 1 or more correlations that exceed 0.6 threshold") %>%
   kable_styling( latex_options = c("scale_down") ) %>% 
   row_spec(0, angle = 90) 
 #%>% landscape()
@@ -169,10 +187,10 @@ Pre (Figure 1) and post (Figure 2) histograms showing the effects of the transfo
 #```{r PreAndPostHists, echo=FALSE, include=FALSE, fig.pos='t', fig.cap= c("Histograms of the #selected, unmodified #Predictors.", "Histograms of selected, transformed, and scaled predictor #data."), out.extra='keepaspectratio', Fig.align='center'}
 
 # Plot the first group of 8 histograms
-par(mfrow = c(2, 4), mar = c(2, 2, 2, 2))
+par(mfrow = c(3, 6), mar = c(2, 2, 2, 2))
 
-for (i in 1:dim(stack_data_clean)[2]) {
-  hist(stack_data_clean[, i], nclass=50, main = colnames(stack_data_clean)[i], xlab="")
+for (i in 1:dim(stack_data)[2]) {
+  hist(stack_data[, i], nclass=50, main = colnames(stack_data_clean)[i], xlab="")
 }
 
 ```
@@ -184,10 +202,10 @@ for (i in 1:dim(stack_data_clean)[2]) {
 ```{r transHists, echo=FALSE, fig.pos='b', fig.cap="Histograms of the selected, transformed, and scaled predictor data.", fig.width=8, fig.height=3.75}
 
 # Plot the second group of 8 histograms
-par(mfrow = c(2, 4), mar = c(2, 2, 2, 2))
+par(mfrow = c(3, 6), mar = c(2, 2, 2, 2))
 
-for (i in 1:dim(t_stack_data)[2]) {
-  hist(t_stack_data[, i], nclass=50, main = colnames(t_stack_data)[i], xlab="")
+for (i in 1:dim(stack_data_clean)[2]) {
+  hist(stack_data_clean[, i], nclass=50, main = colnames(t_stack_data)[i], xlab="")
 }
 
 ```
@@ -228,7 +246,7 @@ The loadings are quantified in Table 5, and shown graphically in Figure 8.
 
 loads <- round( pca_results$loadings$rotation, 3 )
 knitr::kable( loads, format = "latex", booktabs = TRUE, 
-              caption = "Correlation matrix for assessing predictor cross-correlations") %>%
+              caption = "Loadings of predictors onto the Principal Components of the clusters.") %>%
   kable_styling( latex_options = c("scale_down") )
 
 ```
@@ -244,7 +262,7 @@ par(mar = c(0, 0, 0, 0))
 plot( pca_results$plot2 )
 ```
 
-```{r ViolinPlot, warning=FALSE, message=FALSE, echo=FALSE, fig.cap="Violin plots showing distribiton of predictors in each of the k-means clusters."}
+```{r ViolinPlot, warning=FALSE, message=FALSE, echo=FALSE, fig.cap="Violin plots showing distribution of predictors in each of the k-means clusters."}
 vplots
 ```
 
