@@ -42,20 +42,17 @@ See Gregr (2024a) for details on the methods and the k-means classification (mov
 # Data sources
 The output from the Bianucci model has been pre-processed by Barbosa, who also used the 20 m DFO bathymetry to derive some physical predictors. She also explored the potential for nutrient estimates from LiveOcean (presumably from sattelite) but these did not match the in situ measurements *(what are the available in situ measurements?*. Wind is also included and was sourced from the Global Wind Atlas, which provides downscaled re-analysis data on 250 m square grid (more details at https://globalwindatlas.info/en/about/introduction).
 
-Barbosa used bathymetry as a mask to limit classification to < 40 m depth. However, experience in the region suggests nereo does not reach the surface from depths > 15 m (Romina, pers. comm.).
-
 # Methods
-##Predictor screening
-The pool of potential predictors was large (n=53). These were pre-screened by examining correlations and preliminary performance in the k-means clusters. 
-
-Following Barbosa et al., bathymetry was used to limit the analysis to suitable depths and allow the cluster analysis to focus on the photic zone. Bathymetric derivatives were not considered here, as preliminary performance tests showed very high leverage (e.g., aspect).
-
-*Add substrate to partition analysis between hard and soft substrates.*
-
 ## Predictor preparation
-Pre-selected predictors were then clipped to a reduced spatial extent if desired (e.g., to avoid areas of questionable data). Predictors with high skewness identified and normalized if necessary. The results were then scaled (by dividing by the standard deviation) and centred, followed by a final check of correlations. Where predictors were cross-correlated > 0.6, one of them is removed. 
+The pool of potential predictors was large (n=53). These were pre-screened manually, by examining correlations across the 53 variables. For predictors that were correlated >=0.6, we chose those that were correlated with more than on other predictor, or those that were assumed to be more relevant to Nereocystis growth and survival (e.g., July predictors were retained over January predictors).
 
-Finally, the predictors are limited to cells where data exists for all predictors. This is done after the data are cleaned because the all-data filtering should be sampling from clean distributions of each predictor, not a driver of the cleaning. If you know what I mean.
+Bathymetric derivatives were not considered here, as preliminary performance tests showed very high leverage (e.g., aspect). However, we note that these high leverage variables could be used to partition the classification across classes of a predictor of interest. *Add substrate to partition analysis between hard and soft substrates.*
+
+We followed the approach used by Barbosa et al. and masked the pre-selected predictors using bathymetry to limitthe  classification to < 40 m depth. This allowed the cluster analysis to focus on the photic zone. (However, experience in the region suggests nereo does not reach the surface from depths > 15 m, Barbosa, pers. comm.).
+
+Pre-selected predictors were then clipped to a reduced spatial extent if desired (e.g., to avoid areas of questionable data). Predictors with high skewness identified and normalized as necessary. The results were then scaled (by dividing by the standard deviation) and centred, followed by a final check of correlations. Any additional correlations >= 0.6 led to the removal of one of them. 
+
+Finally, the predictors were limited to cells containing a complete set of values. This was done after the data are cleaned because this filtering should be sampling from the prepared data. If done first, this screening would change the distributions of the predictors and influence the normalization process. 
 
 ## Cluster analysis
 Skewnesss plots were used to suggest the number of clusters. Multiple analyses were generated with a different number of clusters and compared qualitatively. 
@@ -71,9 +68,24 @@ Silhouette plots provide information on how observations fit their clusters. Gen
 
 
 # Results 
-##Selected predictors
+## Predictor selection
 
-The selected predictors (Table 1) ... 
+From the initial set of 16 pre-screened predictors (Table 1), cross-correlations were further examined. 
+
+Remaining cross-correlations included: *julST_min* with *julST_max*, *julBT_min*, and *julBSspd_max*. We removed *julST_min* and *julBT_min* as this allowed retention of the maximum bottom temperature along with the surface temperatures.
+
+*julST_max* was also correlated with both *julSS_max* and *julSS_min*, which were correlated at the cutoff of 0.60. We dropped *julSS_min* and kept both max values in despite the high correlation.
+
+*julBSpd_max* was correlated with *julSSpd_min* and *julST_min*. We removed it based on the assumption that retaining temperature at the surface was more important, and that the surface speed minimum would be a better indication of nutrient supply (or lack of) than bottom speed. 
+
+Finally, *julBS_max* was correlated with *julBS_min* and *julBT_max*. These were the only bottom measures remaining in July, and with the bottom temperature minimum removed, we chose to retain *julBT_max* as a bottom value to compare with *janBT_min*, which together provide a useful, biological bracketing of kelp early development and summer water column heating. This meant dropping *julBS_max* and *julBS_min*, and relying on surface salinity measures in the classification. 
+
+After dropping 5 predictors based on correlations, 10 potential predictors remained. Subsequently, we dropped *northness* as it was uniformly distributed across all clusters, leaving **9** potential predictors
+
+
+<!-- 
+-->
+
 
 ```{r, DescripTable, echo=FALSE, escape=FALSE}
 library(knitr)
@@ -91,7 +103,7 @@ descrip_table <- data.frame(
 )
 
 kable(descrip_table, format = "latex", booktabs = TRUE, 
-      caption = "The predictors available from DFO’s MSEA group for different potential drivers of kelp habitat suitability, and the rationale for their inclusion.")  %>%
+      caption = "TO BE COMPLETED: The initial set of 16 pre-screened predictors from the available from Barbosa et al. DFO’s MSEA group for different potential drivers of kelp habitat suitability, and the rationale for their inclusion.")  %>%
   kable_styling() %>%
   column_spec(1, width = "1.3in", latex_column_spec = "p{1.3in}") %>% 
   column_spec(2, width = "1in", latex_column_spec = "p{1in}") %>% 
@@ -99,24 +111,12 @@ kable(descrip_table, format = "latex", booktabs = TRUE,
 
 ```
 
-##Selected predictors
-
-# Results 
-
-## Data description
-
-The loaded (and potentially trimmed) raster stack is `r dim(tif_stack)[1]` by `r dim(tif_stack)[2]`, giving a total of `r scales::comma( dim(tif_stack)[1] * dim(tif_stack)[2])` pixels in the study domain. Much of this area is land, or deeper waters excluded by the bathymetry.
-
-*Include: proportion nearshore, proportion of that with good substrate, and final sample size for clustering.* 
 
 ## Predictor assessment
 
-### Cross-correlations
-When cross-correlations exceeded 0.6 among the predictors (Table 2, Table 3), one of them was removed. Cross-correlations included: *julSSpd_ave* with *julBSpd_ave*, *julSS_ave* and *julSS_min*, and *julST_ave* and *julST_max*. Current speed at the surface was deemed more important than at the  bottom; minimum salinity more important than average salinity, and maximum SST more important than average. The predictors *julST_ave*, *julSS_ave*, *julBSpd_ave* were therefore dropped. Additionally, after initial explorations of clusters, *northness* was seen to constantly contribute equally across clusters and was thus also dropped. 
 
-This left **8** potential predictors.
 
-```{r Correlations, results='asis', echo=FALSE, table.pos='t' }
+```{r CorrTables, results='asis', echo=FALSE, table.pos='t' }
 # Caption is part of kable()
 # Using global: cor_table 
 
@@ -129,7 +129,7 @@ knitr::kable( cor_table, digits = 2, format = "latex", booktabs = TRUE,
 #%>% landscape()
 
 x <- 0.6
-high_rows <- apply(cor_table, 1, function(row) any(row > x, na.rm = TRUE))
+high_rows <- apply(cor_table, 1, function(row) any(abs(row) > x, na.rm = TRUE))
 z <- cor_table[ high_rows, ]
 knitr::kable( z, digits = 2, format = "latex", booktabs = TRUE, 
               caption = "Predictor variables with 1 or more correlations that exceed 0.6 threshold") %>%
@@ -144,36 +144,12 @@ Skewness scores showed strong nonnormality for 4 predictors. Transforms were app
 
 ```{r SkewTable, results='asis', echo=FALSE, table.pos='t'}
 
-skdat <- data.frame(Predictor = character(), Pre_Skew = numeric(), Post_Skew = numeric(), stringsAsFactors = FALSE)
+# Make the table to show change in skew after transform. 
+sktab <- MakeSkewTable()
 
-# Loop through the columns of the dataset
-for (i in 1:ncol(t_stack_data)) {
-  # Calculate skewness for each column in both datasets
-  pre  <- skewness(stack_data[, i], na.rm = TRUE) 
-  post <- skewness(t_stack_data[, i], na.rm = TRUE) 
-  
-  # Combine the column name and skewness values into a new data frame row
-  new_row <- data.frame(
-    Predictor = colnames(t_stack_data)[i],  # Get column name
-    Pre_Skew  = round(pre, 3),                     # Skewness before transformation
-    Post_Skew = round(post, 3)                     # Skewness after transformation
-  )
-  # Append the new row to skdat
-  skdat <- rbind(skdat, new_row)
-}
-
-# Now add the transform values 
-# Create the data frame
-# df <- data.frame(
-#   Predictor = c("REI", "freshwater_index", "standard_dev_slope", "temp_range"),
-#   Ceiling = c(0.3, 0.025, 10, NA),
-#   Power_transform = c("1/2", "1/3", "1/2", "1/2")
-# )
-# Merge the data frames
-
-
-# Print the resulting data frame
-knitr::kable( skdat, format = "latex", booktabs = TRUE, 
+# Print the resulting table ...
+# Would be nice to BOLD rows where skew is NOT equal. 
+knitr::kable( sktab, format = "latex", booktabs = TRUE, 
               caption = "Transforms applied to skewed predictors and the resulting change in skewness.") %>%
 kable_styling(latex_options = "hold_position")
 
@@ -190,7 +166,7 @@ Pre (Figure 1) and post (Figure 2) histograms showing the effects of the transfo
 par(mfrow = c(3, 6), mar = c(2, 2, 2, 2))
 
 for (i in 1:dim(stack_data)[2]) {
-  hist(stack_data[, i], nclass=50, main = colnames(stack_data_clean)[i], xlab="")
+  hist(stack_data[, i], nclass=50, main = colnames(stack_data)[i], xlab="")
 }
 
 ```
@@ -199,13 +175,13 @@ for (i in 1:dim(stack_data)[2]) {
      \medskip -->
 \bigskip
 
-```{r transHists, echo=FALSE, fig.pos='b', fig.cap="Histograms of the selected, transformed, and scaled predictor data.", fig.width=8, fig.height=3.75}
+```{r transHists, echo=FALSE, fig.pos='b', fig.cap="Histograms of the selected, transformed, and scaled predictor data.", fig.align='center', fig.width=8, fig.height=3.75}
 
 # Plot the second group of 8 histograms
 par(mfrow = c(3, 6), mar = c(2, 2, 2, 2))
 
-for (i in 1:dim(stack_data_clean)[2]) {
-  hist(stack_data_clean[, i], nclass=50, main = colnames(t_stack_data)[i], xlab="")
+for (i in 1:dim(t_stack_data)[2]) {
+  hist(t_stack_data[, i], nclass=50, main = colnames(t_stack_data)[i], xlab="")
 }
 
 ```

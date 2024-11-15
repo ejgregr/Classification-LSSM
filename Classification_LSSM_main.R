@@ -26,7 +26,7 @@
 #  - GIT Repos and scripts renamed for clarity.
 # 2024/10/02: Further updates to RMD. Can now run reasonable cluster reports.
 #  - exercising thoroughness by examining full basket of predictors ... 
-# 2024/10/04: Formal walk-thru to winnow predicturs.
+# 2024/10/04: Formal walk-thru to winnow predictors.
 
 
 # TO DO: 
@@ -80,6 +80,9 @@ if (loadtifs) {
 # Romina's Ocean TIFs already trimmed to 40 m and did not contain any land.  
 # IF we want to include any DFO data it will need to match Romina's spatial reference.
 
+# NOTE that these data are pre-screened according to the cross-correlation criteria to make 
+# the data set manageable for normalization. See RMD for details. 
+  
   save( tif_stack, file = paste0( data_dir, '/tifs_SPECTRAL_clipped_', today, '.rData' ))
   
 } else {
@@ -90,33 +93,19 @@ if (loadtifs) {
 
 
 stack_data <- getValues( tif_stack)
-print( "Check skew and transform the data  ... ")
-# Transform those predictors with abs(skew) > 1. 
-#Includes 10 of 17: 
+print( "Transform the data  ... ")
+# Transform those predictors with abs(skew) > 1. Predictor selection was done manually and 
+# includes 10 of 17: 
 #   julBT_min, julBS_min, julSS_min, julSS_max,
 #   julBSpd_min, julBSpd_max, julSSpd_min, julSSpd_max,
 #   roughness, tidal_cur
 
+# MakeMoreNormal() is hard-coded based on trial and error. 
+# trans parameter not used but could be in order to easily include the transform applied 
+# to the resulting table, but do the work only if necessary. 
 t_stack <- MakeMoreNormal(stack_data, trans )
+colnames(t_stack)
 
-skdat <- data.frame(Predictor = character(), Pre_Skew = numeric(), Post_Skew = numeric(), 
-                    stringsAsFactors = FALSE)
-
-for (i in 1:ncol(stack_data)) {
-  # Calculate skewness for each column in both datasets
-  pre  <- skewness(stack_data[, i], na.rm = TRUE) 
-  post <- skewness(t_stack[, i], na.rm = TRUE)
-  
-  # Combine the column name and skewness values into a new data frame row
-  new_row <- data.frame(
-    Predictor = colnames(stack_data)[i],  # Get column name
-    Pre_Skew  = round(pre, 3),            # Skewness before transformation
-    Post_Skew = round(post, 3)            # Skewness after transformation
-  )
-  # Append the new row to skdat
-  skdat <- rbind(skdat, new_row)
-}
-skdat
 
 # Scale and center the transformed data.
 print("Centering and scaling  ... ")
@@ -124,33 +113,37 @@ tmp_stack <- scale(t_stack, center = T,  scale = T)
 t_stack_data <- as.data.frame(tmp_stack)
 print('Data centered.')
 
+
+# Sequential dropping of predictors based on analytic results. 
+# Done here so that correlation plots are updated.  
+# Step 1: Remaining correlated predictors from the SPECTRAL data set dropped.
+# Step 2: Drop Northness as it continues to be uniformly distributed across clusters.
+# Step 3: Drop tidal_cur as performance continues to be highly correlated with julSSpd_min
+t_stack_data <- 
+  t_stack_data[, !colnames(t_stack_data) %in% 
+      c("julBT_min","julST_min","julSSpd_min","julBSpd_max", "julBS_max", "julBS_min", "julSS_min",
+        "northness", "tidal_cur") ]
+
+colnames( t_stack_data )
+
 # A quick correlation across data layers
 x <- t_stack_data
 x_clean <- x[ complete.cases(x), ]
 cor_table <- cor( x_clean )
 cor_table[lower.tri(cor_table)] <- NA
-b_cor <- (cor_table >= 0.6) & (cor_table != 1)
+b_cor <- (abs(cor_table) >= 0.6) & (cor_table != 1)
 sum( b_cor, na.rm=T)
-
-# Drop correlated layers from the SPECTRAL data set
-
-
-#selected_stack <- dropLayer( tif_stack, c("roughness", "northness","julST_ave","julSS_ave", "julBSpd_ave") )
-
-# selected_stack <- dropLayer( tif_stack, c("aspect", "roughness",
-#                                           "julBS_min", "julSS_ave",
-#                                           "julST_min", "julST_ave",
-#                                           "julSSpd_min", "julSSpd_max",
-#                                           "julBSpd_min", "julBSpd_ave", "julBSpd_max") )
 
 # remove any rows with an NA
 # NB: This decouples the data from the RasterStack and requires re-assembly for mapping
 # THESE are the two key data structures used in subsequent steps
+
 clean_idx <- complete.cases(t_stack_data)
 stack_data_clean <- t_stack_data[ clean_idx, ]
 
 dim( t_stack_data )
 dim( stack_data_clean )
+
 
 
 #---- Part 2 of 3: Cluster number selection ----
@@ -163,7 +156,7 @@ imax     <- 25 # maximum iterations to try for convergence
 # Runs kmeans with increasing number of clusters
 
 nclust   <- 18 # number of clusters for scree plot
-nsample  <- 25000 # Scree plot needs a subsample to run reasonably. 
+nsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
 plotme <- MakeScreePlot( stack_data_clean, nclust, randomz, imax, nsample )
 plotme
 
@@ -228,6 +221,7 @@ pca_n <- 25000
 pca_results <- ClusterPCA( pca_n, nclust ) # uses global variable stack_data_clean
 names(pca_results) <- c("loadings", "plot1","plot2")
 
+pca_results$plot1
 #Percentage of variance explained by dimensions
 #eigenvalue <- round(get_eigenvalue(res_pca), 1)
 #var_percent <- eigenvalue$variance.percent
@@ -293,7 +287,7 @@ z_map <- levelplot( cluster_raster, margin = F,
            par.settings = myTheme,
            main = "K-means Clustering Result - Local extents" )
 z_map
-writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_17v_6cluster.tif"), overwrite=TRUE)
+writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_8vB_6cluster.tif"), overwrite=TRUE)
 
 
 #---- Knit and render Markdown file to PDF -----
@@ -304,7 +298,7 @@ rmarkdown::render( "Classification_LSSM_PDF.Rmd",
 #rmarkdown::render( "Classification_test.Rmd",   
                    output_format = 'pdf_document',
                    output_dir    = results_dir,
-                   output_file = paste0( "LSSM_SPECtrim_17v_6cluster_", today ))
+                   output_file = paste0( "LSSM_SPECtrim_8vB_6cluster_", today ))
 
 
 #---- Some details on correlation analysis ... ----

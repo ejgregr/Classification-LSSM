@@ -107,27 +107,36 @@ PlotHists <- function( stack_dat ) {
   }
 }
 
-#---- Four layers that needed some work. ----
-#Includes 10 of 17: 
-#   julBT_min, julBS_min, julSS_min, julSS_max,
-#   julBSpd_min, julBSpd_max, julSSpd_min, julSSpd_max,
-#   roughness, tidal_cur
-
-# Test transforms first ... 
-# x <- stack_data[, "julSS_min"]
-# #summary(x)
-# #hist(x)
-# skewness(x, na.rm = TRUE)
-# 
-# floor <- 10
-# y <- ifelse(x > floor, x, floor)
-# 
-# #y <- asin(x)
-# #y <- log(y)
-# y <- x^3
-# 
-# skewness(y, na.rm = TRUE)
-# hist(y)
+# Uses global variables. Relies on stack_data and transformed stack data (t_stack)
+MakeSkewTable <- function() {
+  # Target data frame for the skew comparison table
+  skdat <- data.frame(Predictor = character(), Pre_Skew = numeric(), Post_Skew = numeric(), 
+                      stringsAsFactors = FALSE)
+  
+  for (i in 1:ncol(stack_data)) {
+    # Calculate skewness for each column in both datasets
+    pre  <- skewness(stack_data[, i], na.rm = TRUE) 
+    post <- skewness(t_stack[, i], na.rm = TRUE)
+    
+    # Combine the column name and skewness values into a new data frame row
+    new_row <- data.frame(
+      Predictor = colnames(stack_data)[i],  # Get column name
+      Pre_Skew  = round(pre, 3),            # Skewness before transformation
+      Post_Skew = round(post, 3)            # Skewness after transformation
+    )
+    # Append the new row to skdat
+    skdat <- rbind(skdat, new_row)
+  }
+  return(skdat)
+  
+  # Can hard-code the addition of ceilings and transforms directly to the table 
+  # df <- data.frame(
+  #   Predictor = c("REI", "freshwater_index", "standard_dev_slope", "temp_range"),
+  #   Ceiling = c(0.3, 0.025, 10, NA),
+  #   Power_transform = c("1/2", "1/3", "1/2", "1/2")
+  # )
+  # Merge the data frames
+}
 
 
 MakeMoreNormal <- function( the_stack, t_list ){
@@ -155,8 +164,8 @@ MakeMoreNormal <- function( the_stack, t_list ){
   x <- the_stack[, "julBSpd_min"]
   y <- log(x)
   the_stack[, "julBSpd_min"] <- y
-  
-  x <- the_stack[, "julBSpd_max"]
+
+    x <- the_stack[, "julBSpd_max"]
   y <- log(x)
   the_stack[, "julBSpd_max"] <- y
 
@@ -175,11 +184,12 @@ MakeMoreNormal <- function( the_stack, t_list ){
   y <- log(y+1)
   the_stack[, "roughness"] <- y
   
-  x <- the_stack[, "tidal_cur"]
-  ceil <- 1
-  y <- ifelse(x > ceil, ceil, x)
-  y <- log(y)
-  the_stack[, "tidal_cur"] <- y
+  # Dropped Nov 15, performance highly correlated with julSSpd_min
+  # x <- the_stack[, "tidal_cur"]
+  # ceil <- 1
+  # y <- ifelse(x > ceil, ceil, x)
+  # y <- log(y)
+  # the_stack[, "tidal_cur"] <- y
   
   return(the_stack) 
 }
@@ -257,29 +267,38 @@ ClusterPCA <- function( n_samp, clustnum ) {
     xlab = paste0("Dim 1 (", var_percent[1], "% )" ),
     ylab = paste0("Dim 2 (", var_percent[2], "% )" )
   ) +
-    stat_mean(aes(color = cluster), size = 4)
+    stat_mean( aes(fill=cluster), shape=21, color="black", size = 4)
 
   pca_loadings <- data.frame(res_pca$rotation)
   pca_scores   <- data.frame(res_pca$x)
-  pca_loadings <- pca_loadings * max(abs(pca_scores$PC1), abs(pca_scores$PC2))
+  pca_loadingsA <- pca_loadings * max(abs(pca_scores$PC1), abs(pca_scores$PC2))
 
-  arrow_plot <- a +
-    geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1, yend = PC2),
+  plot1 <- a +
+    geom_segment(data = pca_loadingsA, aes(x = 0, y = 0, xend = PC1, yend = PC2),
                  arrow = arrow(length = unit(0.2, "cm")), color = "blue") +
-    geom_text(data = pca_loadings, aes(x = PC1, y = PC2, label = rownames(pca_loadings)), 
-              hjust = 0, vjust = 1, color = "red")
+    geom_text(data = pca_loadingsA, aes(x = PC1, y = PC2, label = rownames(pca_loadingsA)), 
+              hjust = 0, vjust = 1, color = "black")
 
-  b <- ggscatter(
+  a <- ggscatter(
     ind_coord, x = "Dim.3", y = "Dim.4", 
     color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
     size = 1.5,  legend = "right", ggtheme = theme_bw(),
     xlab = paste0("Dim 3 (", var_percent[3], "% )" ),
     ylab = paste0("Dim 4 (", var_percent[4], "% )" )
   ) +
-    stat_mean(aes(color = cluster), size = 4)
- 
+    stat_mean( aes(fill=cluster), shape=21, color="black", size = 4)
+  
+  pca_loadingsB <- pca_loadings * max(abs(pca_scores$PC3), abs(pca_scores$PC4))
+  
+  plot2 <- a +
+    geom_segment(data = pca_loadingsB, aes(x = 0, y = 0, xend = PC3, yend = PC4),
+                 arrow = arrow(length = unit(0.2, "cm")), color = "blue") +
+    geom_text(data = pca_loadingsB, aes(x = PC3, y = PC4, label = rownames(pca_loadingsB)), 
+              hjust = 0, vjust = 1, color = "black")
+  
+  
   print( "Done clusters ...")
-  return( list(res_pca, arrow_plot, b))
+  return( list(res_pca, plot1, plot2) )
 }
 
 
