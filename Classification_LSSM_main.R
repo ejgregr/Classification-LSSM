@@ -27,15 +27,15 @@
 # 2024/10/02: Further updates to RMD. Can now run reasonable cluster reports.
 #  - exercising thoroughness by examining full basket of predictors ... 
 # 2024/10/04: Formal walk-thru to winnow predictors.
+# 2025/07/15: Start work to complete with original Biannucci data and learnings from DFO verson.
 
 
 # TO DO: 
 #  1. Reproduce (ish) Romina - use as prototype
 #  2. Combine attributes and develop update plan
-#  3. Add substrate as BINARY to create hard/soft specific clusters. 
 #  4. Spend a TINY bit of time to see if MSEA data can "improve" fit.
-#  5. Configure so repeated clusterings of same data can be attached to same RMD report
-#     OR probably  easier by hand, post-hoc.
+#  5. Can repeated clusterings of same data be attached to same RMD report,
+#     OR easier by hand, post-hoc?
 #######################################################################################
 
 print('Starting Classification  ... LSSM Version')
@@ -43,7 +43,8 @@ rm(list=ls(all=T))  # Erase environment.
 
 # Load necessary packages and functions ... 
 source( "classification_functions.R" )
-# source( "Plot_Functions.R" )
+
+today <- format(Sys.Date(), "%Y-%m-%d")
 
 # Directories ...
 #-- Source and output directories. Will be created if doesn't exist, overwritten if it does.
@@ -56,11 +57,10 @@ loadtifs <- F # If true the data will be re-loaded from TIFs, else it will be lo
 clipdata <- T # If true a spatial subset of the data will be taken based on a polygon shape file. 
 reclust  <- T # If true, re-cluster full data set prior to mapping, else predict to unclassified pixels.
 
-#---- Part 1 of 3: Load, clean, and prepare predictor data.  ----
-# If loadtifs == TRUE then run all this else load the processed data.
+#---- Part 1: Load and trim predictor data.  ----
+# If loadtifs == TRUE then TIFs loaded from raster_dir, else a stack is loaded from rData file.
 
 tif_stack <- stack()
-today <- format(Sys.Date(), "%Y-%m-%d")
 
 if (loadtifs) {
   print( "Loading predictors ... ")
@@ -72,24 +72,45 @@ if (loadtifs) {
   if (clipdata) {
     print( "clipping TIFs ... ")
     #amask <- shapefile("C:\\Data\\SpaceData\\Broughton\\broughton_small.shp")
-    amask <- shapefile("C:\\Data\\SpaceData\\Broughton\\broughton_smaller.shp")
-    tif_stack <- ClipPredictors( tif_stack, amask )
+    amask <- shapefile("C:\\Data\\SpaceData\\Broughton\\broughton_smallest.shp")
+    tif_stack <- ClipSPECPredictors( tif_stack, amask )
     print('Rasters clipped.')
   }
  
-# Romina's Ocean TIFs already trimmed to 40 m and did not contain any land.  
-# IF we want to include any DFO data it will need to match Romina's spatial reference.
-
-# NOTE that these data are pre-screened according to the cross-correlation criteria to make 
-# the data set manageable for normalization. See RMD for details. 
   
+  writeRaster( src_stack[[3]], paste0( results_dir, "/tif_test.tif"), overwrite=TRUE)
+  
+# IF we want to include DFO data it will need to match Bianucci's spatial reference.
+
   save( tif_stack, file = paste0( data_dir, '/tifs_SPECTRAL_clipped_', today, '.rData' ))
   
 } else {
   print( 'Loading project data ... ')
   # Ideally meaningfully named and tested so no source is required.
-  load( paste0( data_dir, '/tifs_SPECTRAL_clipped_2024-10-04.rData' ))
+  load( paste0( data_dir, '/tifs_SPECTRAL_clipped_2025-07-14.rData' ))
 }
+
+
+#---- Part 2: Predictor correlations ----
+#-- Move to matrix space from raster space 
+x <- getValues( tif_stack )
+
+#-- Identify and use only pixels with all data
+# NB: This decouples the data from the RasterStack, and requires re-assembly for mapping
+dim(x)
+clean_idx <- complete.cases( x )
+x_clean <- x[ clean_idx, ]
+dim( x_clean )
+
+#---- Correlation across data layers 
+cor_table <- round( cor( x_clean ), 3)
+cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
+
+high_rows <- apply(cor_table, 1, function(row) any(row > 0.6, na.rm = TRUE))
+z <- cor_table[ high_rows, ]
+
+
+tx_clean <- x_clean
 
 
 stack_data <- getValues( tif_stack)
@@ -167,6 +188,13 @@ nsample <- 500000 # a larger sample for more robust classification
 
 sidx <- sample( 1:length( stack_data_clean[ , 1] ), nsample )
 samp <- stack_data_clean[ sidx, ]
+
+
+## JUNE 2025 - working here ... 
+# Run all the data ... Can do for KKD.
+
+samp <- stack_data_clean
+
 cluster_result <- kmeans(samp, centers=nclust, nstart=randomz, iter.max=imax) 
 
 #---- Part 2b: Create heat map of within-cluster standard deviations ----
@@ -250,27 +278,55 @@ vplots
 #     a) re-cluster the entire data set (using imax and randomz from above) or
 #     b) Predict to the unsampled portion of the raster. 
 
-# initialize target data structure 
+
+# For the smallest extents, don't need to recluster (below)
+
 cluster_raster <- tif_stack[[1]]
 dataType(cluster_raster) <- "INT1U"
 cluster_raster[] <- NA
 
-if (reclust == T) {
-  # Re-cluster using all the clean data  ... 
-  # less than 1 min with iter.max = 20, nstart = 20 for smallest region
-  cluster_result <- kmeans(stack_data_clean, centers = nclust, nstart = randomz, iter.max = imax)
-  
-  # Assign the clustered values ... 
-  # extract values from the target cluster
-  new_values <- values( cluster_raster )
-  # replace non-NA values with the cluster results
-  new_values[ clean_idx ] <- cluster_result$cluster
-  # put the updated values back on the target cluster
-  values( cluster_raster ) <- new_values  
-} else {
-  # Predict values for unclustered cells. Can be more time-consuming than re-classifying everything. 
-  values( cluster_raster ) <- transferCluster( values(cluster_raster), cluster_result )
-}
+#   # Assign the clustered values ... 
+#   # extract values from the target cluster
+   new_values <- values( cluster_raster )
+#   # replace non-NA values with the cluster results
+   new_values[ clean_idx ] <- cluster_result$cluster
+#   # put the updated values back on the target cluster
+   values( cluster_raster ) <- new_values  
+
+writeRaster( cluster_raster, paste0( results_dir, "/tif_stack_shallow_", today, ".tif"), overwrite=TRUE)
+
+
+### Jun 25 '25: Reconstruction didn't work with the 'smallest' clip of the data, 
+# likely cuz it can all be classified so this logic doesn't quite work. 
+# NEED TO build a condition in so that its only used when needed. 
+
+## initialize target data structure 
+# cluster_raster <- tif_stack[[1]]
+# dataType(cluster_raster) <- "INT1U"
+# cluster_raster[] <- NA
+# 
+# if (reclust == T) {
+#   # Re-cluster using all the clean data  ... 
+#   # less than 1 min with iter.max = 20, nstart = 20 for smallest region
+#   
+#   # Re-use seed from above to ensure identical clusters
+#   .Random.seed <- saved_seed
+#   cluster_result <- kmeans(stack_data_clean, centers = nclust, nstart = randomz, iter.max = imax)
+#   
+#   # Assign the clustered values ... 
+#   # extract values from the target cluster
+#   new_values <- values( cluster_raster )
+#   # replace non-NA values with the cluster results
+#   new_values[ clean_idx ] <- cluster_result$cluster
+#   # put the updated values back on the target cluster
+#   values( cluster_raster ) <- new_values  
+# } else {
+#   # Predict values for unclustered cells. 
+#   # Currently more time-consuming than re-classifying everything, probably cuz predicting
+#   # includes all the pixels outside the area of interest. Could likely be more efficient. 
+#   values( cluster_raster ) <- transferCluster( tx_clean, values(cluster_raster), cluster_result )
+# }
+
 
 #--- Display the results, first as histogram then as map.  
 raster::hist( values(cluster_raster ))
@@ -287,7 +343,7 @@ z_map <- levelplot( cluster_raster, margin = F,
            par.settings = myTheme,
            main = "K-means Clustering Result - Local extents" )
 z_map
-writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_8vB_6cluster.tif"), overwrite=TRUE)
+writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_testing_", today, ".tif"), overwrite=TRUE)
 
 
 #---- Knit and render Markdown file to PDF -----
@@ -298,7 +354,7 @@ rmarkdown::render( "Classification_LSSM_PDF.Rmd",
 #rmarkdown::render( "Classification_test.Rmd",   
                    output_format = 'pdf_document',
                    output_dir    = results_dir,
-                   output_file = paste0( "LSSM_SPECtrim_8vB_6cluster_", today ))
+                   output_file = paste0( "LSSM_SPECtrim_testing_", today ))
 
 
 #---- Some details on correlation analysis ... ----

@@ -14,7 +14,8 @@
 # check for any required packages that aren't installed and install them
 required.packages <- c( "ggplot2", "reshape2", "tidyr","dplyr", "raster", "stringr", "rasterVis",
                         "RColorBrewer", "factoextra", "ggpubr", "cluster", "rmarkdown","lubridate",
-                        "knitr", "tinytex", "kableExtra", "e1071")
+                        "knitr", "tinytex", "kableExtra", "e1071",
+                        "ncdf4", "terra", "akima")
 
 # "diffeR", "vegan", "ranger", "e1071", "forcats", "measures", "caret", "PresenceAbsence"
 # "randomForest", "spatialEco", "xlsx", "robustbase", "biomod2", "sp", "magrittr", "tinytex", "rmarkdown", "binr", 'gwxtab'
@@ -34,16 +35,15 @@ lapply(required.packages, require, character.only = TRUE)
 # proj4 string for albers projection with NAD83 datum
 spat_ref <- '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0'
 
-
 #===================================== Functions =========================================
 
-#---- Loads predictors from specified subdirectory -----
-LoadPredictors <- function( pred_dir ) {
+#---- Load TIF predictors from specified subdirectory -----
+LoadPredictors <- function( pdir ) {
   
-  print( list.files(path = pred_dir, pattern = '\\.tif$', full.names = FALSE) )
+  print( list.files(path = pdir, pattern = '\\.tif$', full.names = FALSE) )
   
   # make a list of predictor rasters
-  raster.list <- list.files(path = pred_dir, pattern = '\\.tif$', full.names = TRUE)
+  raster.list <- list.files(path = pdir, pattern = '\\.tif$', full.names = TRUE)
   
   
   # make list of raster names (without extension)
@@ -76,6 +76,17 @@ ClipPredictors <- function( stack_in, the_mask){
   return( z )
 }
 
+#---- ClipSPECPredictors: limits extents based on a polygon mask
+ClipSPECPredictors <- function( stack_in, the_mask){
+  z <- stack()
+  for (i in 1:dim( stack_in)[[3]] ) {
+    x <- raster::crop(stack_in[[i]], the_mask )
+    y <- raster::mask(x, the_mask)
+    z <- stack( z, y )
+    print( paste0('layer ', i, ' clipped.'))
+  }
+  return( z )
+}
 
 #---- Returns a stack of integerized rasters from a raster stack ----
 Integerize <- function( in_layers, sig = 1000 ) {
@@ -160,10 +171,10 @@ MakeMoreNormal <- function( the_stack, t_list ){
   y <- y^5
   the_stack[, "julSS_max"] <- y
   
-  
-  x <- the_stack[, "julBSpd_min"]
-  y <- log(x)
-  the_stack[, "julBSpd_min"] <- y
+  # error on  smallest extents
+#  x <- the_stack[, "julBSpd_min"]
+#  y <- log(x)
+#  the_stack[, "julBSpd_min"] <- y
 
     x <- the_stack[, "julBSpd_max"]
   y <- log(x)
