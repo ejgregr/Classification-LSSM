@@ -15,7 +15,7 @@
 required.packages <- c( "ggplot2", "reshape2", "tidyr","dplyr", "raster", "stringr", "rasterVis",
                         "RColorBrewer", "factoextra", "ggpubr", "cluster", "rmarkdown","lubridate",
                         "knitr", "tinytex", "kableExtra", "e1071",
-                        "ncdf4", "terra", "akima")
+                        "ncdf4", "terra", "akima", "sf")
 
 # "diffeR", "vegan", "ranger", "e1071", "forcats", "measures", "caret", "PresenceAbsence"
 # "randomForest", "spatialEco", "xlsx", "robustbase", "biomod2", "sp", "magrittr", "tinytex", "rmarkdown", "binr", 'gwxtab'
@@ -37,56 +37,36 @@ spat_ref <- '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 
 
 #===================================== Functions =========================================
 
-#---- Load TIF predictors from specified subdirectory -----
-LoadPredictors <- function( pdir ) {
+
+# Given a correlation matrix, return the highest correlation and the variable pair.
+showHighestPairs <- function (ctab){
+  y <- max(ctab, na.rm=T)
+  x <- which(ctab == y, arr.ind = TRUE)
+  col_idx <- x[, 2]
+  row_idx <- x[, 1]
   
-  print( list.files(path = pdir, pattern = '\\.tif$', full.names = FALSE) )
-  
-  # make a list of predictor rasters
-  raster.list <- list.files(path = pdir, pattern = '\\.tif$', full.names = TRUE)
-  
-  
-  # make list of raster names (without extension)
-  raster.names <- lapply(raster.list, FUN = function(raster.layer){
-    substr(basename(raster.layer), 1, nchar(basename(raster.layer)) - 4)
-  } )
-  
-  # create a raster stack from raster_list
-  # Go thru one at a time so that we can set NA values ... needed for Romina's rasters
-  raster.stack <- stack()
-  for (i in raster.list) {
-    new.layer <- raster( i )
-    if (cellStats(new.layer, min) < -5) {
-      values(new.layer)[ values(new.layer) < 0 ] <- NA }
-    raster.stack <- addLayer( raster.stack, new.layer)
-  }
-  return(raster.stack)
+  print( y )
+  print( rownames(cor_table)[row_idx] )
+  print( colnames(cor_table)[col_idx] )
 }
 
 
-#---- ClipPredictors: masks away deeper water and limits extents based on a polygon mask
-ClipPredictors <- function( stack_in, the_mask){
-  z <- stack()
-  for (i in 1:dim( stack_in)[[3]] ) {
-    x <- raster::crop(stack_in[[i]], the_mask )
-    y <- raster::mask(x, the_mask)
-    z <- stack( z, y )
-    print( paste0('layer ', i, ' clipped.'))
+showHighestPairs2 <- function(ctab, threshold) {
+  idx <- which(ctab >= threshold, arr.ind = TRUE)
+  if (nrow(idx) == 0) {
+    message("No correlations above threshold.")
+    return(invisible(NULL))
   }
-  return( z )
+  
+  for (i in seq_len(nrow(idx))) {
+    row_name <- rownames(ctab)[idx[i, 1]]
+    col_name <- colnames(ctab)[idx[i, 2]]
+    value <- ctab[idx[i, 1], idx[i, 2]]
+    cat(sprintf("Row: %s, Col: %s, Correlation: %.3f\n", row_name, col_name, value))
+  }
 }
 
-#---- ClipSPECPredictors: limits extents based on a polygon mask
-ClipSPECPredictors <- function( stack_in, the_mask){
-  z <- stack()
-  for (i in 1:dim( stack_in)[[3]] ) {
-    x <- raster::crop(stack_in[[i]], the_mask )
-    y <- raster::mask(x, the_mask)
-    z <- stack( z, y )
-    print( paste0('layer ', i, ' clipped.'))
-  }
-  return( z )
-}
+
 
 #---- Returns a stack of integerized rasters from a raster stack ----
 Integerize <- function( in_layers, sig = 1000 ) {
@@ -150,60 +130,54 @@ MakeSkewTable <- function() {
 }
 
 
-MakeMoreNormal <- function( the_stack, t_list ){
+# Selected FVCOM data with skews >1:
+# salt_DEC_surf_max   CS_DEC_bott_ave   CS_JUL_bott_ave   CS_JUL_surf_ave   CS_JUL_surf_max 
+# 1.338474          1.142058          2.048373          1.321944          1.683211 
+MakeMoreNormal <- function( dat ){
 #  asin(x/max(x))
 #  log(x)
-  x <- the_stack[, "julBT_min"]
-  y <- x^2
-  the_stack[, "julBT_min"] <- y 
+  x <- dat[, "salt_DEC_surf_max"]
+  y <- x^-3
+  dat[, "salt_DEC_surf_max"] <- y
   
-  x <- the_stack[, "julBS_min"]
-  y <- x^3
-  the_stack[, "julBS_min"] <- y
+  x <- dat[, "CS_DEC_bott_ave"]
+  y <- log(x+1)
+  dat[, "CS_DEC_bott_ave"] <- y
+  
+  x <- dat[, "CS_JUL_bott_ave"]
+  y <- (x+.1)^-2
+  dat[, "CS_JUL_bott_ave"] <- y
+  
+  x <- dat[, "CS_JUL_surf_ave"]
+  y <- (x+.1)^-2
+  dat[, "CS_JUL_surf_ave"] <- y
+  
+  x <- dat[, "CS_JUL_surf_max"]
+  y <- (x/max(x)+.5)^-2
+  dat[, "CS_JUL_surf_max"] <- y
 
-  x <- the_stack[, "julSS_min"]
-  y <- x^3
-  the_stack[, "julSS_min"] <- y
+  #bring lower values in and transform
+  x <- dat[, "salt_JUL_surf_min"]
+  floor <- 20
+  y <- ifelse(x < floor, floor, x)
+  y <- (x/max(x)+.5)^-2
+  y <- y^-3
+  dat[, "salt_JUL_surf_min"] <- y
   
-  x <- the_stack[, "julSS_max"]
-  floor <- 25
-  y <- ifelse(x > floor, x, floor)
-  y <- y^5
-  the_stack[, "julSS_max"] <- y
-  
-  # error on  smallest extents
-#  x <- the_stack[, "julBSpd_min"]
-#  y <- log(x)
-#  the_stack[, "julBSpd_min"] <- y
-
-    x <- the_stack[, "julBSpd_max"]
-  y <- log(x)
-  the_stack[, "julBSpd_max"] <- y
-
-  x <- the_stack[, "julSSpd_min"]
-  y <- log(x)
-  the_stack[, "julSSpd_min"] <- y
-
-  x <- the_stack[, "julSSpd_max"]
-  y <- log(x)
-  the_stack[, "julSSpd_max"] <- y
-  
-  
-  x <- the_stack[, "roughness"]
-  ceil <- 100
-  y <- ifelse(x > ceil, ceil, x)
-  y <- log(y+1)
-  the_stack[, "roughness"] <- y
-  
-  # Dropped Nov 15, performance highly correlated with julSSpd_min
-  # x <- the_stack[, "tidal_cur"]
-  # ceil <- 1
-  # y <- ifelse(x > ceil, ceil, x)
-  # y <- log(y)
-  # the_stack[, "tidal_cur"] <- y
-  
-  return(the_stack) 
+  return( dat ) 
 }
+
+
+PlotHistos <- function( adf, ptitle ){
+  df_long <- pivot_longer(adf, everything(), names_to = "variable", values_to = "value")
+  ggplot(df_long, aes(x = value)) +
+    geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+    facet_wrap(~ variable, scales = "free") +
+    theme_minimal() +
+    labs(title = ptitle) +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
 
 #---- MakeScreePlot: returns a ggplot. ----
 # samp is optional, uses all dat if omitted.
@@ -245,18 +219,18 @@ MakeScreePlot <- function( indat, nclust, nrand, maxi, sampsize = 0 ){
 
 #---- ClusterPCA: Returns a pair of PCA plots showing the separation of the clusters.
 # NOTE: Uses a relatively small subset of the overall data so these will change with a different sample.
-ClusterPCA <- function( n_samp, clustnum ) {
+ClusterPCAall <- function( p_data ) {
   
-  ssidx <- sample( 1:length( stack_data_clean[ , 1] ), n_samp )
-  ssamp <- stack_data_clean[ ssidx, ]
+ # ssidx <- sample( 1:length( stack_data_clean[ , 1] ), n_samp )
+ # ssamp <- stack_data_clean[ ssidx, ]
   
   # re-run cluster for smaller sample.
-  cluster_result <- kmeans(ssamp, centers = clustnum, nstart = randomz) # less than 10 seconds
-  csamp <- cluster_result$cluster
+  #cluster_result <- kmeans(datssamp, centers = clustnum, nstart = randomz) # less than 10 seconds
+  #csamp <- cluster_result$cluster
   
   # Create the data structure for PCA profiling (combining predictor data with the clusters). 
   # Put cluster # first so easy to find for PCA
-  p_data <- as.data.frame( cbind(cluster = csamp, ssamp ) )
+  #p_data <- as.data.frame( cbind(cluster = clust, dat ) )
   
   res_pca <- prcomp(p_data[,-1],  scale = TRUE)
   # PC coordinates of individual raster cells
@@ -307,6 +281,73 @@ ClusterPCA <- function( n_samp, clustnum ) {
     geom_text(data = pca_loadingsB, aes(x = PC3, y = PC4, label = rownames(pca_loadingsB)), 
               hjust = 0, vjust = 1, color = "black")
   
+  print( "Done clusters ...")
+  return( list(res_pca, plot1, plot2) )
+}
+
+#---- ClusterPCA: Returns a pair of PCA plots showing the separation of the clusters.
+# NOTE: Uses a relatively small subset of the overall data so these will change with a different sample.
+ClusterPCA <- function( n_samp, clustnum ) {
+  
+  ssidx <- sample( 1:length( stack_data_clean[ , 1] ), n_samp )
+  ssamp <- stack_data_clean[ ssidx, ]
+  
+  # re-run cluster for smaller sample.
+  cluster_result <- kmeans(ssamp, centers = clustnum, nstart = randomz) # less than 10 seconds
+  csamp <- cluster_result$cluster
+  
+  # Create the data structure for PCA profiling (combining predictor data with the clusters). 
+  # Put cluster # first so easy to find for PCA
+  p_data <- as.data.frame( cbind(cluster = csamp, ssamp ) )
+  
+  res_pca <- prcomp(p_data[,-1],  scale = TRUE)
+  # PC coordinates of individual raster cells
+  ind_coord <- as.data.frame(get_pca_ind(res_pca)$coord)
+  # Add clusters from the classification
+  ind_coord$cluster <- factor( p_data$cluster )
+  # Data inspection
+  #head(ind_coord)
+  
+  # Percentage of variance explained by dimensions
+  eigenvalue <- round(get_eigenvalue(res_pca), 1)
+  var_percent <- eigenvalue$variance.percent
+  
+  # Look at the clusters for the first 4 PCs
+  a <- ggscatter(
+    ind_coord, x = "Dim.1", y = "Dim.2", 
+    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    size = 1.5,  legend = "right", ggtheme = theme_bw(),
+    xlab = paste0("Dim 1 (", var_percent[1], "% )" ),
+    ylab = paste0("Dim 2 (", var_percent[2], "% )" )
+  ) +
+    stat_mean( aes(fill=cluster), shape=21, color="black", size = 4)
+  
+  pca_loadings <- data.frame(res_pca$rotation)
+  pca_scores   <- data.frame(res_pca$x)
+  pca_loadingsA <- pca_loadings * max(abs(pca_scores$PC1), abs(pca_scores$PC2))
+  
+  plot1 <- a +
+    geom_segment(data = pca_loadingsA, aes(x = 0, y = 0, xend = PC1, yend = PC2),
+                 arrow = arrow(length = unit(0.2, "cm")), color = "blue") +
+    geom_text(data = pca_loadingsA, aes(x = PC1, y = PC2, label = rownames(pca_loadingsA)), 
+              hjust = 0, vjust = 1, color = "black")
+  
+  a <- ggscatter(
+    ind_coord, x = "Dim.3", y = "Dim.4", 
+    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    size = 1.5,  legend = "right", ggtheme = theme_bw(),
+    xlab = paste0("Dim 3 (", var_percent[3], "% )" ),
+    ylab = paste0("Dim 4 (", var_percent[4], "% )" )
+  ) +
+    stat_mean( aes(fill=cluster), shape=21, color="black", size = 4)
+  
+  pca_loadingsB <- pca_loadings * max(abs(pca_scores$PC3), abs(pca_scores$PC4))
+  
+  plot2 <- a +
+    geom_segment(data = pca_loadingsB, aes(x = 0, y = 0, xend = PC3, yend = PC4),
+                 arrow = arrow(length = unit(0.2, "cm")), color = "blue") +
+    geom_text(data = pca_loadingsB, aes(x = PC3, y = PC4, label = rownames(pca_loadingsB)), 
+              hjust = 0, vjust = 1, color = "black")
   
   print( "Done clusters ...")
   return( list(res_pca, plot1, plot2) )

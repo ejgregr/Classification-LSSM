@@ -27,7 +27,9 @@
 # 2024/10/02: Further updates to RMD. Can now run reasonable cluster reports.
 #  - exercising thoroughness by examining full basket of predictors ... 
 # 2024/10/04: Formal walk-thru to winnow predictors.
-# 2025/07/15: Start work to complete with original Biannucci data and learnings from DFO verson.
+# 2025/07/15: Start work to complete with original Biannucci data and learnings from DFO version.
+# 2025/07/21: Completed processing of original Biannucci data to points
+#   --> Start major revision to classification, replacing Spectral rasters with DFO point data.
 
 
 # TO DO: 
@@ -38,7 +40,7 @@
 #     OR easier by hand, post-hoc?
 #######################################################################################
 
-print('Starting Classification  ... LSSM Version')
+print('Starting Classification  ... LSSM Version 2: Points not rasters')
 rm(list=ls(all=T))  # Erase environment.
 
 # Load necessary packages and functions ... 
@@ -48,123 +50,122 @@ today <- format(Sys.Date(), "%Y-%m-%d")
 
 # Directories ...
 #-- Source and output directories. Will be created if doesn't exist, overwritten if it does.
-raster_dir <- 'C:/Data/SpaceData/Classification/Romina'
+source_dir <- 'C:/Data/SpaceData/Broughton/netcdf'
 data_dir   <- 'C:/Data/Git/Classification-LSSM/Data'
 results_dir<- 'C:/Data/Git/Classification-LSSM/Results' 
 
-# Processing FLAGS...
-loadtifs <- F # If true the data will be re-loaded from TIFs, else it will be loaded from rData.
-clipdata <- T # If true a spatial subset of the data will be taken based on a polygon shape file. 
-reclust  <- T # If true, re-cluster full data set prior to mapping, else predict to unclassified pixels.
+#NOTEs: 
+# -For loading of TIFs, see the DFO version of the classification code.
+# -Jul 21 version clipped to KD extents
 
-#---- Part 1: Load and trim predictor data.  ----
-# If loadtifs == TRUE then TIFs loaded from raster_dir, else a stack is loaded from rData file.
+load( file = paste0( source_dir, '/FVCOM_point_data_2025-07-21.rData' ))
+str(kd_pts)
+fv_dat <- kd_pts
 
-tif_stack <- stack()
+# Now shorten the names ... 
+names(fv_dat) <- gsub("salinity", "salt", names(fv_dat))
+names(fv_dat) <- gsub("bottom",   "bott", names(fv_dat))
+names(fv_dat) <- gsub("surface",  "surf", names(fv_dat))
+colnames(fv_dat)
 
-if (loadtifs) {
-  print( "Loading predictors ... ")
-  src_stack <- LoadPredictors( raster_dir )
-  print( "Data loaded.")
-  
-  tif_stack <- src_stack
-  
-  if (clipdata) {
-    print( "clipping TIFs ... ")
-    #amask <- shapefile("C:\\Data\\SpaceData\\Broughton\\broughton_small.shp")
-    amask <- shapefile("C:\\Data\\SpaceData\\Broughton\\broughton_smallest.shp")
-    tif_stack <- ClipSPECPredictors( tif_stack, amask )
-    print('Rasters clipped.')
-  }
- 
-  
-  writeRaster( src_stack[[3]], paste0( results_dir, "/tif_test.tif"), overwrite=TRUE)
-  
-# IF we want to include DFO data it will need to match Bianucci's spatial reference.
+# remove (X,Y) for the moment
+#plot( kd_pts$X, kd_pts$Y)
+fv_dat <- fv_dat[ , !(names(fv_dat) %in% c("X", "Y")) ]
 
-  save( tif_stack, file = paste0( data_dir, '/tifs_SPECTRAL_clipped_', today, '.rData' ))
-  
-} else {
-  print( 'Loading project data ... ')
-  # Ideally meaningfully named and tested so no source is required.
-  load( paste0( data_dir, '/tifs_SPECTRAL_clipped_2025-07-14.rData' ))
-}
+#---- Predictor correlations ----
 
-
-#---- Part 2: Predictor correlations ----
-#-- Move to matrix space from raster space 
-x <- getValues( tif_stack )
-
-#-- Identify and use only pixels with all data
-# NB: This decouples the data from the RasterStack, and requires re-assembly for mapping
-dim(x)
-clean_idx <- complete.cases( x )
-x_clean <- x[ clean_idx, ]
-dim( x_clean )
-
-#---- Correlation across data layers 
-cor_table <- round( cor( x_clean ), 3)
+cor_table <- round( cor( fv_dat ), 3)
 cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
 
-high_rows <- apply(cor_table, 1, function(row) any(row > 0.6, na.rm = TRUE))
+high_rows <- apply(cor_table, 1, function(row) any(row > 0.5, na.rm = TRUE))
 z <- cor_table[ high_rows, ]
+showHighestPairs2( z, 0.5 )
+
+# Start removing variables. 
+
+# Pass 1:
+# These are perfectly correlated. Odd?
+# "salt_DEC_bott_ave" "temp_DEC_bott_ave" "salt_DEC_surf_max"
+# "salt_DEC_surf_ave" "temp_DEC_surf_ave" "CS_DEC_surf_ave"  
+# plot( fv_dat$temp_DEC_surf_ave, fv_dat$temp_DEC_bott_ave)
+# Drop bottoms.
+fv_dat <- fv_dat[ , !grepl("salt_DEC_bott_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_DEC_bott_ave", names(fv_dat)) ]
+# Retain chemistry over currents.
+fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_ave", names(fv_dat)) ]
+
+# Pass 2: 
+# 15 correlations >= 0.9. First drop correlated averages
+fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_JUL_bott_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_ave", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_min", names(fv_dat)) ] # correlated with max
+# remainder all correlated with Dec CS. Retain surface where possible 
+fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_min", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_max", names(fv_dat)) ]
+# Dec/Jan surf current max and mins correlated. Keep JUL
+fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_min", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_max", names(fv_dat)) ]
+# Retain min over average
+fv_dat <- fv_dat[ , !grepl("salt_JUL_surf_ave", names(fv_dat)) ]
+
+#Pass 3:
+# 8 correlations >= 0.8. First drop correlated averages
+#  retain max on temp, and min on salt ...   
+fv_dat <- fv_dat[ , !grepl("temp_DEC_bott_min", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_max", names(fv_dat)) ]
+# Remaining 6 are all JUL currents 
+fv_dat <- fv_dat[ , !grepl("CS_JUL_surf_min", names(fv_dat)) ] # correlated w 3
+fv_dat <- fv_dat[ , !grepl("CS_JUL_bott_min", names(fv_dat)) ]
+# check if either further cor'd but not so drop bottom
+fv_dat <- fv_dat[ , !grepl("CS_JUL_bott_max", names(fv_dat)) ]
+
+#Pass4:
+# 9 correlations >= 0.6. Most min/max pairs, drop min or max depending
+fv_dat <- fv_dat[ , !grepl("salt_DEC_bott_max", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_min", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("temp_JUL_bott_min", names(fv_dat)) ]
+# keep a bottom value for DEC
+fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_max", names(fv_dat)) ]
+# min salts at bottom and surface correlated across seasons. 
+# retain Jul surface and Dec bot
+fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_min", names(fv_dat)) ]
+fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_min", names(fv_dat)) ]
+
+dim(fv_dat)
+
+# Correlation analysis done on untransformed predictors. 
+# Now work on Normality 
 
 
-tx_clean <- x_clean
-
-
-stack_data <- getValues( tif_stack)
 print( "Transform the data  ... ")
-# Transform those predictors with abs(skew) > 1. Predictor selection was done manually and 
-# includes 10 of 17: 
-#   julBT_min, julBS_min, julSS_min, julSS_max,
-#   julBSpd_min, julBSpd_max, julSSpd_min, julSSpd_max,
-#   roughness, tidal_cur
+PlotHistos( fv_dat, "Untransformed FVCOM predictors" )
+
+# Show predictors with abs(skew) > 1.
+skews <- apply(fv_dat, 2, skewness, na.rm = TRUE)
+skews[skews > 1]
 
 # MakeMoreNormal() is hard-coded based on trial and error. 
-# trans parameter not used but could be in order to easily include the transform applied 
-# to the resulting table, but do the work only if necessary. 
-t_stack <- MakeMoreNormal(stack_data, trans )
-colnames(t_stack)
+# Adapted to FVCOM data
+tfv_dat <- MakeMoreNormal( fv_dat )
 
+PlotHistos( tfv_dat, "Transformed FVCOM predictors" )
 
-# Scale and center the transformed data.
+# Now scale and center the transformed data.
 print("Centering and scaling  ... ")
-tmp_stack <- scale(t_stack, center = T,  scale = T)
-t_stack_data <- as.data.frame(tmp_stack)
-print('Data centered.')
+x <- scale( tfv_dat, center = T,  scale = T )
+done_dat <- as.data.frame( x )
+PlotHistos( done_dat, "Transformed and scaled FVCOM predictors" )
 
 
-# Sequential dropping of predictors based on analytic results. 
-# Done here so that correlation plots are updated.  
-# Step 1: Remaining correlated predictors from the SPECTRAL data set dropped.
-# Step 2: Drop Northness as it continues to be uniformly distributed across clusters.
-# Step 3: Drop tidal_cur as performance continues to be highly correlated with julSSpd_min
-t_stack_data <- 
-  t_stack_data[, !colnames(t_stack_data) %in% 
-      c("julBT_min","julST_min","julSSpd_min","julBSpd_max", "julBS_max", "julBS_min", "julSS_min",
-        "northness", "tidal_cur") ]
+#---- Final data selection ---- 
+# Any sequential dropping of predictors based on analytic results done here
+# So all clustering reflects the changes. 
 
-colnames( t_stack_data )
-
-# A quick correlation across data layers
-x <- t_stack_data
-x_clean <- x[ complete.cases(x), ]
-cor_table <- cor( x_clean )
-cor_table[lower.tri(cor_table)] <- NA
-b_cor <- (abs(cor_table) >= 0.6) & (cor_table != 1)
-sum( b_cor, na.rm=T)
-
-# remove any rows with an NA
-# NB: This decouples the data from the RasterStack and requires re-assembly for mapping
-# THESE are the two key data structures used in subsequent steps
-
-clean_idx <- complete.cases(t_stack_data)
-stack_data_clean <- t_stack_data[ clean_idx, ]
-
-dim( t_stack_data )
-dim( stack_data_clean )
-
+dim( done_dat )
+colnames( done_dat )
 
 
 #---- Part 2 of 3: Cluster number selection ----
@@ -176,24 +177,20 @@ imax     <- 25 # maximum iterations to try for convergence
 #---- Part 2a: Explore number of clusters using Within-sum-of-squares scree plot ----
 # Runs kmeans with increasing number of clusters
 
-nclust   <- 18 # number of clusters for scree plot
-nsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
-plotme <- MakeScreePlot( stack_data_clean, nclust, randomz, imax, nsample )
+
+nclust   <- 18 # number of clusters for scree plotnsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
+plotme <- MakeScreePlot( done_dat, nclust, randomz, imax, 0 )
 plotme
 
 #---- Create a working set of N clusters (N based on scree plot) to further assess cluster number. ----
 
-nclust  <- 6 # the number of clusters based on scree plot, above.
-nsample <- 500000 # a larger sample for more robust classification
+nclust  <- 7 # the number of clusters based on scree plot, above.
+#nsample <- 500000 # a larger sample for more robust classification
 
-sidx <- sample( 1:length( stack_data_clean[ , 1] ), nsample )
-samp <- stack_data_clean[ sidx, ]
+#sidx <- sample( 1:length( stack_data_clean[ , 1] ), nsample )
+#samp <- stack_data_clean[ sidx, ]
 
-
-## JUNE 2025 - working here ... 
-# Run all the data ... Can do for KKD.
-
-samp <- stack_data_clean
+samp <- done_dat
 
 cluster_result <- kmeans(samp, centers=nclust, nstart=randomz, iter.max=imax) 
 
@@ -222,32 +219,19 @@ z_heat
 
 #---- Part 2c: Examine silhouette plot of the WORKING clusters  ----
 # Uses the predictor values and the corresponding assigned cluster
-# Need to subsample from the cluster result above as distance matrix take long time.
 
-# Take a subsample of the clusters and the predictors for the silhouette plot. 
-sil_n <- 20000
-silx <- sample( 1:length( samp[ , 1] ), sil_n )
-
-cs <- cluster_result$cluster[ silx ]
-ss <- samp[ silx, ]
-
-# Calculate a distance matrix between the predictors and plot assigned to each cluster.
-# both these steps are time consuming, hence a smaller sample.
-c_dist <- dist(ss)
+cs <- cluster_result$cluster
+c_dist <- dist(samp)
 sk <- silhouette(cs, c_dist)
-#mean( sk[,"sil_width"] )
 
 plot(sk, col = 1:nclust, border=NA, main = "" )
-
 
 #---- Part 3: Detailed examination of N clusters  ----
 #---- Part 3a: Show cluster groupings using PCA ----
 
-#-- Can take some time so it makes its own cluster 
-pca_n <- 25000
-
-pca_results <- ClusterPCA( pca_n, nclust ) # uses global variable stack_data_clean
-names(pca_results) <- c("loadings", "plot1","plot2")
+z <- as.data.frame( cbind(cluster = cs, done_dat ) )
+pca_results <- ClusterPCAall( z )
+names( pca_results ) <- c("loadings", "plot1","plot2")
 
 pca_results$plot1
 #Percentage of variance explained by dimensions
@@ -256,7 +240,7 @@ pca_results$plot1
 
 #---- Part 3b: Violins of predictor contributions to WORKING clusters ----
 
-x <- as.data.frame( samp )
+x <- done_dat
 x$cluster <- as.factor( cluster_result$cluster )
 
 y <- x %>%
@@ -274,76 +258,26 @@ vplots <-
 vplots
 
 #---- Part 3c: Spatialize and display the WORKING clusters ----
-# NB: To show a comprehensive map, can either:
-#     a) re-cluster the entire data set (using imax and randomz from above) or
-#     b) Predict to the unsampled portion of the raster. 
+# Jul22: Currently using points here. 
+#   For a raster, see the code in the DFO classification version.
+
+pts <- data.frame(x = kd_pts$X, y = kd_pts$Y, cluster = cluster_result$cluster)
+
+# 32609 is the CRS for UTM Zone 9N, the projection of the FVCOM data
+sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = 32609)
+
+hist( pts$cluster )
+ggplot(sf_pts, aes(color = factor(cluster))) + geom_sf()
+
+#Output a shape file
+st_write(sf_pts, "cluster_points.shp", delete_layer = TRUE)
 
 
-# For the smallest extents, don't need to recluster (below)
 
-cluster_raster <- tif_stack[[1]]
-dataType(cluster_raster) <- "INT1U"
-cluster_raster[] <- NA
-
-#   # Assign the clustered values ... 
-#   # extract values from the target cluster
-   new_values <- values( cluster_raster )
-#   # replace non-NA values with the cluster results
-   new_values[ clean_idx ] <- cluster_result$cluster
-#   # put the updated values back on the target cluster
-   values( cluster_raster ) <- new_values  
-
-writeRaster( cluster_raster, paste0( results_dir, "/tif_stack_shallow_", today, ".tif"), overwrite=TRUE)
-
-
-### Jun 25 '25: Reconstruction didn't work with the 'smallest' clip of the data, 
-# likely cuz it can all be classified so this logic doesn't quite work. 
-# NEED TO build a condition in so that its only used when needed. 
-
-## initialize target data structure 
-# cluster_raster <- tif_stack[[1]]
-# dataType(cluster_raster) <- "INT1U"
-# cluster_raster[] <- NA
-# 
-# if (reclust == T) {
-#   # Re-cluster using all the clean data  ... 
-#   # less than 1 min with iter.max = 20, nstart = 20 for smallest region
-#   
-#   # Re-use seed from above to ensure identical clusters
-#   .Random.seed <- saved_seed
-#   cluster_result <- kmeans(stack_data_clean, centers = nclust, nstart = randomz, iter.max = imax)
-#   
-#   # Assign the clustered values ... 
-#   # extract values from the target cluster
-#   new_values <- values( cluster_raster )
-#   # replace non-NA values with the cluster results
-#   new_values[ clean_idx ] <- cluster_result$cluster
-#   # put the updated values back on the target cluster
-#   values( cluster_raster ) <- new_values  
-# } else {
-#   # Predict values for unclustered cells. 
-#   # Currently more time-consuming than re-classifying everything, probably cuz predicting
-#   # includes all the pixels outside the area of interest. Could likely be more efficient. 
-#   values( cluster_raster ) <- transferCluster( tx_clean, values(cluster_raster), cluster_result )
-# }
-
-
-#--- Display the results, first as histogram then as map.  
-raster::hist( values(cluster_raster ))
 
 # Define color palette
 pal_clust <- brewer.pal(n = nclust, "Accent") # Max for Accent is 8
 
-ckey <- list( at=0:nclust, 
-              title="Clusters", 
-              col = pal_clust)
-myTheme <- rasterTheme( region = pal_clust )
-z_map <- levelplot( cluster_raster, margin = F, 
-           colorkey = ckey,
-           par.settings = myTheme,
-           main = "K-means Clustering Result - Local extents" )
-z_map
-writeRaster( cluster_raster, paste0( results_dir, "/SPECtrim_testing_", today, ".tif"), overwrite=TRUE)
 
 
 #---- Knit and render Markdown file to PDF -----

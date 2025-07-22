@@ -189,7 +189,7 @@ for (elem in 1:nele) {
   }
 }
 
-# Now do the interplation 
+# Now do the interpolation 
 uv_names <- grep("^[uv]", names(all_data), value = TRUE, ignore.case = TRUE)
 uv_data  <- all_data[ uv_names ]
 uv_interp <- InterpElemToNode( node2faces, uv_data )
@@ -251,28 +251,15 @@ ggplot(kd_pts, aes(x = X, y = Y, color = CS_DEC_bottom_ave)) +
   theme_minimal()
 
 
-#-------------- Correlation bits ------------------
-# Copy cor code from main script ... 
-#---- Correlation across data layers 
-cor_table <- round( cor( sum_dat ), 3)
-cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
+# Save the results!
+today <- format(Sys.Date(), "%Y-%m-%d")
+target_dir <- 'C:/Data/SpaceData/Broughton/netcdf'
+save( kd_pts, file = paste0( target_dir, '/FVCOM_point_data_', today, '.rData' ))
 
-high_rows <- apply(cor_table, 1, function(row) any(row > 0.6, na.rm = TRUE))
-z <- cor_table[ high_rows, ]
-z
-# Start removing variables. 
-sum_dat <- sum_dat[ , !grepl("salinity_JUL_bottom_ave", names(sum_dat))]
-sum_dat <- sum_dat[ , !grepl("temp_JUL_bottom_ave", names(sum_dat))]
-sum_dat <- sum_dat[ , !grepl("salinity_JUL_surface_ave", names(sum_dat))]
-sum_dat <- sum_dat[ , !grepl("temp_JUL_surface_ave", names(sum_dat))]
-sum_dat <- sum_dat[ , !grepl("temp_JUL_surface_min", names(sum_dat))]
-sum_dat <- sum_dat[ , !grepl("salinity_JUL_surface_max", names(sum_dat))]
 
-# This is the only one proving a bit difficult cuz both min and max are correlated
-# with salinity_JUL_surface_min. Maybe leave with this correlation for now.
 
-#sum_dat <- sum_dat[ , !grepl("salinity_JUL_bottom_min", names(sum_dat))]
-dim(sum_dat)
+### FIN!
+
 
 
 #---- Initial clustering ----
@@ -360,50 +347,4 @@ ggsave( paste0( results_dir, "/winter_6cluster.png"), plot = a, width = 6, heigh
 
 
 
-
-
-
-
-
-
-
-
-
-#---------------------- Vestigial code -------------------------------------
-#  Interpolation, projection, and rasterization of netCDF data
-
-# Example usage for FVCOM node data:
-# Suppose you want surface temperature at time 1, surface layer (siglay = 1):
-
-x <- vars$x   # node x-coordinates
-y <- vars$y   # node y-coordinates
-xres = 200    # raster resolution
-yres = 200    # raster resolution
-temp <- vars$temp  # [node, siglay, time] array
-
-
-# Interpolate to regular grid and create raster
-r_temp <- InterpToGrid( vars$x, vars$y, vars$h, xres, yres )
-
-# Flip to correct orientation on y axis - apparetly a common problem with 
-# netcdf to raster conversion.
-r_temp <- flip(r_temp, direction = "vertical")
-
-
-# Assign coordinate system if you know it (example is UTM zone 9N)
-crs(r_temp) <- "+proj=utm +zone=9 +datum=WGS84 +units=m +no_defs"
-r_temp <- project( r_temp, spat_ref )
-r_temp <- raster::crop( r_temp, amask )
-
-plot(r_temp, main = "Monthly mean temperature (FVCOM)")
-
-writeRaster(r_temp, paste0( data_dir, "/fvcom_temp2.tif"), overwrite = TRUE)
-
-
-# Assemble the coordinates for display in Arc 
-# Goal was to try Python-based barrier-aware interpolation until found the 
-# lack of data in KKD. 
-x <- cbind( vars$x, vars$y, vars$h )
-colnames(x) <- c( "x", "y", "h")
-head(x)
-write.csv( x, file = paste0( data_dir, '/FVCOM_depth_points.txt' ), row.names = FALSE)
+# FIN.

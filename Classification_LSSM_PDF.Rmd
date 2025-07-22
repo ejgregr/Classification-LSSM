@@ -135,7 +135,10 @@ Sixteen predictors were loaded into the initial raster stack from the output of 
 ### Cross-correlations
 Correlations are first examined across all loaded predictors (Table 3), and correlation values exceeding 0.6 are identified (Table 4). 
 
-The following predictors were removed based on their correlations ... *tidal_mean_summer*   
+Selection of variables to be removed included 
+The following predictors were removed based on their correlations:
+
+
 
 This left 8 variables as potential predictors.
 
