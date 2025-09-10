@@ -29,20 +29,31 @@ Broughton LSSM. Major challenge is that the resolution of the FVCOM model does n
 support the resolution we are interested in. Lots of geography missing. So, need to 
 develop a clear set of objectives. 
 
-# Objectives 
-Primary objective is to classify the FVCOM data in a way that can be informative to the LSSM. 
-This includes winter/summer classification, and surface and deep classes. So 4 individual classifications.
+# Objectives
+Develop a seasonal (winter/summer) classification relevant to bull kelp using the native resolution of the FVCOM data.
+The expectation is that this could lead to a better understanding of how and why bull kelp distributions have been limited recently in the area. 
 
-Secondary objective is to produce a report in an RMD that compares the clusterings. This
-can be a bit complicated particularly for the data prep portion, as different predictors - by definition 
-since the FVCOM output is divided into JAN/JUL and Surf/Bott. 
+Secondary objective is to produce a report in an RMD that compares the seasonal clusterings. 
 
-# Approach
-You have also just (Sep 3) copied some code into the functions script to match up clusters. 
-While this is a post-hoc thing, it will need testing.
+# Methods
+## Data preparation
+We obtained FVCOM data for the region, summarized as mean, min, and max for the representative months of December and July. Ocean variables included currents, temperature, and salinity. Statistics were calculated at the surface and the bottom of each model node. Current values were interpolated from the model edges to the nodes. 
 
+## Variable selection
+We first identified predictors likely to be relevant for each season based on kelp biology. We then examined the seasonal sets of predictors and removed highly correlated variables, ensuring that there were no cross-correlations greater than 0.60.
+
+For summer, we prioritized monthly surface temperatures, preferentially retaining the mean followed by the maximum as waters are generally still cool (i.e., unlikely to have reached critical temps REF). For salinity, we prioritized bottom salinity, also preferring the mean followed by the maximum to emphasize areas of well mixed, nutrient-rich ocean waters. We retained current predictors only if they were correlated at less than 0.6 with temperature or salinity, again preferentially retaining the mean followed by the maximum to emphasize areas of mixing.
+
+For winter, given the importance of gametophyte settlement and transport, we prioritized mean bottom currents, temperature, and salinity, preferring means followed by minimum values. 
 
 # Results 
+## Correlation analysis
+
+
+
+
+
+
 When examining cross-correlations, currents tended to be correlated with each other, as 
 well as with chemistry. From a total of 36 predictors (across 2 depths, 2 seasons, and 3 aggregations),
 11 were found to be correlated at < 0.60. 

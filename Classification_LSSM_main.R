@@ -31,7 +31,7 @@
 #   --> Start major revision to classification, replacing Spectral rasters with DFO FVCOM points.
 # 2025/07/22: Completed first pass thru LSSM classes. Pushed. 
 # 2025/09/03: Back at this now, tidying up loose ends, and coming up with a plan.
-
+# 2025/09/10: Developed a seasonal plan with Chris. Optimistic this will lead to a conclusion.
 
 # To DO:
 # - Examine predictors with cor = 1.0. FVCOM or data transfer problem?
