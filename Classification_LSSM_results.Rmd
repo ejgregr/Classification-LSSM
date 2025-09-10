@@ -1,0 +1,81 @@
+---
+title: "Clustering Results"
+author: "Edward Gregr"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    keep_tex: true       # Keep intermediate LaTeX file for troubleshooting
+    latex_engine: pdflatex # Specify the LaTeX engine (pdflatex, xelatex, or lualatex). This renders the pdf
+    number_sections: true # Optional, if you want numbered sections
+    toc: true             # Table of contents (optional)
+    fig_caption: true     # Enable figure captions
+fontsize: 11pt            # Set font size (optional)
+geometry: margin=1in      # Set margins (optional)
+header-includes:
+  - \usepackage{booktabs} # for tables
+  - \usepackage{pdflscape}
+  - \usepackage{tocloft}
+  - \usepackage{float} # for controlling placement of tables and figures
+  - \usepackage{placeins} # for a cmd to keep text in place.
+  - \setlength{\intextsep}{5pt} % Vertical space above & below [h] floats
+  - \setlength{\textfloatsep}{5pt} % Vertical space below (above) [t] ([b]) floats
+  - \setlength{\abovecaptionskip}{5pt}
+  - \setlength{\belowcaptionskip}{5pt}
+---
+
+# Summary
+This report summarises the clustering of FVCOM point data to support the development of the 
+Broughton LSSM. Major challenge is that the resolution of the FVCOM model does not 
+support the resolution we are interested in. Lots of geography missing. So, need to 
+develop a clear set of objectives. 
+
+# Objectives 
+Primary objective is to classify the FVCOM data in a way that can be informative to the LSSM. 
+This includes winter/summer classification, and surface and deep classes. So 4 individual classifications.
+
+Secondary objective is to produce a report in an RMD that compares the clusterings. This
+can be a bit complicated particularly for the data prep portion, as different predictors - by definition 
+since the FVCOM output is divided into JAN/JUL and Surf/Bott. 
+
+# Approach
+You have also just (Sep 3) copied some code into the functions script to match up clusters. 
+While this is a post-hoc thing, it will need testing.
+
+
+# Results 
+When examining cross-correlations, currents tended to be correlated with each other, as 
+well as with chemistry. From a total of 36 predictors (across 2 depths, 2 seasons, and 3 aggregations),
+11 were found to be correlated at < 0.60. 
+
+```{r Histograms, results='asis', echo=FALSE }
+hist1
+hist2
+hist3
+```
+
+## Seasonal comparison
+There are 4 predictors left for winter (DEC). Scree plot suggests up to 9 clusters. No clear 'break' in the curve. 
+There are 7 predictors left for summer (JUL). Scree plot is similar to winter, in that up to 9 clusters seem warranted.
+
+
+
+```{r, ScreePlotDescripTable, echo=FALSE, escape=FALSE, fig.pos='H'}
+#Only needed once per number of variables. 
+scree_plot
+
+```
+
+```{r Plots, results='asis', echo=FALSE }
+
+heat_map
+
+v_plots
+
+hist( cluster_result$cluster )
+
+clust_map
+
+```
+
+
+<!-- THE END -->

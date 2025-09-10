@@ -15,7 +15,10 @@
 required.packages <- c( "ggplot2", "reshape2", "tidyr","dplyr", "raster", "stringr", "rasterVis",
                         "RColorBrewer", "factoextra", "ggpubr", "cluster", "rmarkdown","lubridate",
                         "knitr", "tinytex", "kableExtra", "e1071",
-                        "ncdf4", "terra", "akima", "sf")
+                        "ncdf4", "terra", "akima", "sf",
+                        "clue", "patchwork" )
+
+# viridisLite an option for gradient palettes
 
 # "diffeR", "vegan", "ranger", "e1071", "forcats", "measures", "caret", "PresenceAbsence"
 # "randomForest", "spatialEco", "xlsx", "robustbase", "biomod2", "sp", "magrittr", "tinytex", "rmarkdown", "binr", 'gwxtab'
@@ -36,6 +39,40 @@ lapply(required.packages, require, character.only = TRUE)
 spat_ref <- '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0'
 
 #===================================== Functions =========================================
+
+# ---- Function: Align kmean cluster labels by membership overlap (Hungarian on contingency)
+# Pass the two kmeans results: km_ref = reference, km_new = to be aligned
+# Returns: $mapping (index = new label, value = ref label),
+#          $aligned (new labels remapped to ref),
+#          $contingency (ref x new table)
+align_kmeans_by_overlap <- function(km_ref, km_new) {
+  stopifnot(length(km_ref$cluster) == length(km_new$cluster))
+  K_ref <- nrow(km_ref$centers); K_new <- nrow(km_new$centers)
+  stopifnot(K_ref == K_new)  # same K
+  K <- K_ref
+  
+  ref <- as.integer(km_ref$cluster)
+  new <- as.integer(km_new$cluster)
+  
+  # Contingency: rows = ref labels, cols = new labels
+  M <- table(factor(ref, levels = 1:K),
+             factor(new, levels = 1:K))
+  M <- as.matrix(M)
+  
+  # Hungarian solves a min-cost; we want to maximize overlap
+  cost <- max(M) - M
+  assign <- clue::solve_LSAP(cost)  # for each ref row i, chosen new col j
+  
+  # Build mapping new->ref (index = new label, value = ref label)
+  mapping <- integer(K)
+  for (i in 1:K) {
+    j <- assign[i]
+    mapping[j] <- i
+  }
+  
+  aligned <- mapping[new]
+  list(mapping = mapping, aligned = aligned, contingency = M)
+}
 
 
 # Given a correlation matrix, return the highest correlation and the variable pair.
@@ -176,6 +213,48 @@ PlotHistos <- function( adf, ptitle ){
     theme_minimal() +
     labs(title = ptitle) +
     theme(plot.title = element_text(hjust = 0.5))
+}
+
+
+PlotHeatMap <- function( clust, dat, main_txt = "Heat Map" ){
+  # Define color palette
+  pal_heat <- rev( brewer.pal(n = nclust, name = "RdYlBu")) # heat map palette
+  profile_data <- as.data.frame( cbind(cluster = clust, dat ) )
+  
+  cluster_sd <- profile_data %>%
+    group_by(cluster) %>%
+    summarise_all(sd)
+  
+  x <- as.data.frame( cluster_sd )
+  xm <- melt( x, id.var = "cluster" )
+  
+  z_heat <- ggplot(xm, aes(x=cluster, y=variable, fill=value) ) +
+    geom_tile() +
+    scale_fill_gradientn(colours = pal_heat) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    labs(title = main_txt, x = "Clusters", y = "Predictors", fill = "Value")
+  return( z_heat )
+}
+
+
+PlotViolins <- function( clusts, dat ){
+  x <- dat
+  x$cluster <- as.factor( clusts )
+  y <- x %>%
+    pivot_longer(cols = -cluster, names_to = "predictor", values_to = "value")
+  
+  # Create violin plot
+  vplots <- 
+    ggplot(y, aes(x = cluster, y = value, fill = cluster)) +
+    geom_violin(trim = FALSE) +
+    facet_wrap(~ predictor, scales = "free_y") +
+    theme_minimal() +
+    labs(title = "Violin Plots of Predictors Across k-means Clusters",
+         x = "Cluster",
+         y = "Value")
+  
+  return( vplots )
 }
 
 
@@ -411,6 +490,44 @@ transferCluster <- function(values_target, c_result){
   # reassign to the plotting raster
   return( values_target )
 }
+
+#---- CLUSTER Matching functions ----
+# Will use Hungarian algorithm. Workflow by ChatGPT
+# install.packages("clue")  # for the Hungarian assignment
+library(clue)
+
+match_clusters_by_overlap <- function(ref, new) {
+# ref: integer vector of cluster ids from your reference run (length N)
+# new: integer vector of cluster ids from the new run (length N), same N/order as ref
+  stopifnot(length(ref) == length(new))
+  ref <- as.integer(ref); new <- as.integer(new)
+  k <- max(max(ref), max(new))   # assumes same K
+  
+  # Contingency (rows = ref labels, cols = new labels)
+  M <- table(factor(ref, levels = 1:k),
+             factor(new, levels = 1:k))
+  M <- as.matrix(M)
+  
+  # Hungarian solves a *min* cost assignment, so convert to costs
+  # We want to maximize matches -> minimize (max(M) - M)
+  cost <- max(M) - M
+  assignment <- solve_LSAP(cost)   # returns column chosen for each row
+  
+  # Build a remap vector new_label -> ref_label
+  # assignment[i] = column (new label) matched to row i (ref label)
+  # We want perm_new_to_ref[new_label] = ref_label
+  perm_new_to_ref <- integer(k)
+  for (ref_label in 1:k) {
+    new_label <- assignment[ref_label]
+    perm_new_to_ref[new_label] <- ref_label
+  }
+  
+  # Apply mapping: relabel 'new' so it aligns with 'ref'
+  new_aligned <- perm_new_to_ref[new]
+  list(mapping = perm_new_to_ref, aligned = new_aligned, contingency = M)
+}
+
+
 
 
 

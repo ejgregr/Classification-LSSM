@@ -1,9 +1,10 @@
 #----------------------------------------------------------------------------
 # Script:  NetCDF_processing.R
-# Created: July 2025 with help from ChatGPT to process files provided by Laura Bianucci.
+# Created: July 2025 with help from ChatGPT to process FVCOM files provided by Laura Bianucci.
 #
 # Notes:
-#  - 2025/07/16: 
+#  - 2025/09/09: Largely complete and stand-alone. 
+#     Handles NETCDF loading, projecting, and clipping to spatial extents defined using a shape file.
 #
 #================================== Load require packages ======================
 
@@ -96,7 +97,6 @@ InterpElemToNode <- function(n2f, uv_data) {
   }
   return( as.data.frame(res))
 }
-
 
 # Return current speed for each pair of u,v (of the form 'u_DEC_bottom_mean').
 # Expecting 12 columns from an input of 24.  
@@ -211,6 +211,7 @@ str(big_df)
 
 ### Now have 60 variables from the NC files all the same length (123,598)
 
+
 #---- Final data preparation step ----
 # Refactor the dataframe to remove redundancies
 # First pull the coordinates - only need them once! :)
@@ -224,7 +225,7 @@ dim(big_df)
 names(big_df)
 #str(big_df)
 
-#---- Clip to Klokwade Damsxi ----
+#---- Clip to Village Sea environs ----
 # We're going to work in UTM Zone 9 so that the clipped points can be used 
 # to then trim the rest of the data. 
 
@@ -240,7 +241,7 @@ ggplot() +
 
 # turn kd_pts back into a df after messing about with sf points for the clip.
 coords <- st_coordinates(kd_pts)
-kd_pts <- cbind( coords,st_drop_geometry(kd_pts) )
+kd_pts <- cbind( coords, st_drop_geometry(kd_pts) )
 str(kd_pts)
 
 
@@ -253,98 +254,8 @@ ggplot(kd_pts, aes(x = X, y = Y, color = CS_DEC_bottom_ave)) +
 
 # Save the results!
 today <- format(Sys.Date(), "%Y-%m-%d")
-target_dir <- 'C:/Data/SpaceData/Broughton/netcdf'
+target_dir <- data_dir # From main script.
 save( kd_pts, file = paste0( target_dir, '/FVCOM_point_data_', today, '.rData' ))
 
 
-
 ### FIN!
-
-
-
-#---- Initial clustering ----
-
-### WORKING WITH ALL PREDICTORS - UNTIL CAN INCLUDE CURRENTS FOR COR WORK ###
-
-# Lets look at seasonal differences ... 
-sum_dat <- kd_pts[ ,grepl( "(X|Y|JUL)", names(kd_pts) )]
-win_dat <- kd_pts[ ,grepl( "(X|Y|DEC)", names(kd_pts) )]
-
-set.seed(43)
-k <- 6
-
-# Make clusters but without (X, Y)
-sum_clust <- kmeans( sum_dat[ , !(names(sum_dat) %in% c("X", "Y")) ], centers = k )
-win_clust <- kmeans( win_dat[ , !(names(win_dat) %in% c("X", "Y")) ], centers = k )
-
-sum_dat$cluster <- sum_clust$cluster
-win_dat$cluster <- win_clust$cluster
-
-# Aligning cluster labels ... 
-clustperm <- clue::solve_LSAP( table(sum_clust$cluster, win_clust$cluster), maximum = TRUE)
-# Apply permutation to clusteringB to best match clusteringA
-win_dat$cluster <- clustperm[ win_clust$cluster ]
-
-#---- Plotting
-library(ggplot2)
-a <- ggplot(sum_dat, aes(x = X, y = Y, color = factor(cluster))) +
-  geom_point(size = 1) +
-  coord_equal() +
-  theme_minimal()
-a
-ggsave( paste0( results_dir, "/summer_6cluster.png"), plot = a, width = 6, height = 4, dpi = 300)
-
-
-library(ggplot2)
-a <- ggplot(win_dat, aes(x = X, y = Y, color = factor(cluster))) +
-  geom_point(size = 1) +
-  coord_equal() +
-  theme_minimal()
-a
-ggsave( paste0( results_dir, "/winter_6cluster.png"), plot = a, width = 6, height = 4, dpi = 300)
-
-
-
-
-
-#---------------------- JOINT CLUSTERING?? -------------------
-names(sum_dat) <- gsub("_JUL_", "_", names(sum_dat))
-names(win_dat) <- gsub("_DEC_", "_", names(win_dat))
-sum_dat$season <- "summer"
-win_dat$season <- "winter"
-
-combined <- rbind(sum_dat, win_dat)
-# Only cluster on environmental columns
-env_cols <- setdiff(names(combined), c("X", "Y", "season"))
-
-k <- 6
-set.seed(43)
-joint_clust <- kmeans(combined[ , env_cols ], centers = k)
-
-combined$cluster <- joint_clust$cluster
-
-# Split back out
-sum_dat$cluster <- combined$cluster[combined$season == "summer"]
-win_dat$cluster <- combined$cluster[combined$season == "winter"]
-
-#---- Plotting
-a <- ggplot(sum_dat, aes(x = X, y = Y, color = factor(cluster))) +
-  geom_point(size = 1) +
-  guides(color = guide_legend(override.aes = list(size = 3))) +  # controls legend point size
-  coord_equal() +
-  theme_minimal()
-a
-ggsave( paste0( results_dir, "/summer_6cluster.png"), plot = a, width = 6, height = 4, dpi = 300)
-
-
-a <- ggplot(win_dat, aes(x = X, y = Y, color = factor(cluster))) +
-  geom_point(size = 1) +
-  coord_equal() +
-  theme_minimal()
-a
-ggsave( paste0( results_dir, "/winter_6cluster.png"), plot = a, width = 6, height = 4, dpi = 300)
-
-
-
-
-# FIN.

@@ -1,7 +1,6 @@
-#################################################################################
 # Script:  Classification_main_LSSM.R - Broughton LSSM version
 # Created: February 2024. EJG
-# 
+############################################################################----
 # This script sources the necessary libraries and functions, coordinates the 
 # analysis, and creates data structures that are then 'knitted' together (I think).
 # So the idea is to run bits in here, and then 'Render' the RMD script. 
@@ -27,24 +26,25 @@
 # 2024/10/02: Further updates to RMD. Can now run reasonable cluster reports.
 #  - exercising thoroughness by examining full basket of predictors ... 
 # 2024/10/04: Formal walk-thru to winnow predictors.
-# 2025/07/15: Start work to complete with original Biannucci data and learnings from DFO version.
-# 2025/07/21: Completed processing of original Biannucci data to points
-#   --> Start major revision to classification, replacing Spectral rasters with DFO point data.
+# 2025/07/15: Start work to complete with original Bianucci data and learnings from DFO version.
+# 2025/07/21: Completed processing of original Bianucci data to points
+#   --> Start major revision to classification, replacing Spectral rasters with DFO FVCOM points.
+# 2025/07/22: Completed first pass thru LSSM classes. Pushed. 
+# 2025/09/03: Back at this now, tidying up loose ends, and coming up with a plan.
 
 
-# TO DO: 
-#  1. Reproduce (ish) Romina - use as prototype
-#  2. Combine attributes and develop update plan
-#  4. Spend a TINY bit of time to see if MSEA data can "improve" fit.
-#  5. Can repeated clusterings of same data be attached to same RMD report,
-#     OR easier by hand, post-hoc?
-#######################################################################################
+# To DO:
+# - Examine predictors with cor = 1.0. FVCOM or data transfer problem?
+
+################################################################################
 
 print('Starting Classification  ... LSSM Version 2: Points not rasters')
 rm(list=ls(all=T))  # Erase environment.
 
 # Load necessary packages and functions ... 
-source( "classification_functions.R" )
+ source( "classification_functions.R" )
+# Only if you need to reload FVCOM data 
+#source( "netCDF_processing.R" )
 
 today <- format(Sys.Date(), "%Y-%m-%d")
 
@@ -54,26 +54,31 @@ source_dir <- 'C:/Data/SpaceData/Broughton/netcdf'
 data_dir   <- 'C:/Data/Git/Classification-LSSM/Data'
 results_dir<- 'C:/Data/Git/Classification-LSSM/Results' 
 
-#NOTEs: 
-# -For loading of TIFs, see the DFO version of the classification code.
-# -Jul 21 version clipped to KD extents
+# NOTES: 
+# - For loading of TIFs, and the necessary subsampling, see the DFO version of the classification code.
+# - The FVCOM data are only sub-sampled spatially, in ArcGIS.
 
-load( file = paste0( source_dir, '/FVCOM_point_data_2025-07-21.rData' ))
+#---- Load FVCOM point data ----
+# -Jul 21 version of FVCOM clipped to KD extents
+#load( file = paste0( source_dir, '/FVCOM_point_data_2025-07-22.rData' ))
+
+# Sept 5 version. Minor code tweaks
+load( file = paste0( data_dir, '/FVCOM_point_data_2025-09-05.rData' ))
+
 str(kd_pts)
 fv_dat <- kd_pts
 
-# Now shorten the names ... 
+# Shorten some names ... 
 names(fv_dat) <- gsub("salinity", "salt", names(fv_dat))
 names(fv_dat) <- gsub("bottom",   "bott", names(fv_dat))
 names(fv_dat) <- gsub("surface",  "surf", names(fv_dat))
 colnames(fv_dat)
 
-# remove (X,Y) for the moment
+# remove (X,Y) for the analysis
 #plot( kd_pts$X, kd_pts$Y)
 fv_dat <- fv_dat[ , !(names(fv_dat) %in% c("X", "Y")) ]
 
 #---- Predictor correlations ----
-
 cor_table <- round( cor( fv_dat ), 3)
 cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
 
@@ -101,7 +106,8 @@ fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_ave", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_ave", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("temp_JUL_bott_ave", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_min", names(fv_dat)) ] # correlated with max
+# min correlated with max, prefer max
+fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_min", names(fv_dat)) ] 
 # remainder all correlated with Dec CS. Retain surface where possible 
 fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_min", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_max", names(fv_dat)) ]
@@ -134,14 +140,16 @@ fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_max", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_min", names(fv_dat)) ]
 fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_min", names(fv_dat)) ]
 
+names(fv_dat)
 dim(fv_dat)
 
-# Correlation analysis done on untransformed predictors. 
+hist1 <- PlotHistos( fv_dat, "Untransformed, uncorrelated FVCOM predictors" )
+hist1
+# Above correlation analysis done using untransformed predictors. 
 # Now work on Normality 
 
-
+#---- Transformation and scaling of uncorrelated predictors  ----
 print( "Transform the data  ... ")
-PlotHistos( fv_dat, "Untransformed FVCOM predictors" )
 
 # Show predictors with abs(skew) > 1.
 skews <- apply(fv_dat, 2, skewness, na.rm = TRUE)
@@ -151,155 +159,242 @@ skews[skews > 1]
 # Adapted to FVCOM data
 tfv_dat <- MakeMoreNormal( fv_dat )
 
-PlotHistos( tfv_dat, "Transformed FVCOM predictors" )
+dim(tfv_dat)
+hist2 <- PlotHistos( tfv_dat, "Transformed FVCOM predictors" )
+hist2
 
 # Now scale and center the transformed data.
 print("Centering and scaling  ... ")
 x <- scale( tfv_dat, center = T,  scale = T )
 done_dat <- as.data.frame( x )
-PlotHistos( done_dat, "Transformed and scaled FVCOM predictors" )
-
+hist3 <- PlotHistos( done_dat, "Transformed and scaled FVCOM predictors" )
+hist3
 
 #---- Final data selection ---- 
 # Any sequential dropping of predictors based on analytic results done here
 # So all clustering reflects the changes. 
 
-dim( done_dat )
-colnames( done_dat )
+use_dat <- done_dat
+
+# Start with a seasonal comparison
+
+# Drop JuL for winter data only - yields only 3 predictors.
+use_dat <- use_dat[ , !grepl("JUL", names(use_dat)) ]
+
+# Drop current data to focus on water chemistry
+# use_dat <- use_dat[ , !grepl("CS", names(use_dat)) ]
+
+# * This is the df used throughout below *
+names( use_dat )
 
 
-#---- Part 2 of 3: Cluster number selection ----
+#---- Cluster analysis Part 1 - Number of clusters  ----
 
 set.seed <- 42 # Seed for reproducibility
 randomz  <- 20 # the number of randomizations for kmeans to do.
 imax     <- 25 # maximum iterations to try for convergence
 
-#---- Part 2a: Explore number of clusters using Within-sum-of-squares scree plot ----
+# Explore number of clusters using Within-sum-of-squares scree plot
 # Runs kmeans with increasing number of clusters
+nclust     <- 18 # number of clusters for scree plotnsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
+scree_plot <- MakeScreePlot( use_dat, nclust, randomz, imax, 0 )
+scree_plot
 
 
-nclust   <- 18 # number of clusters for scree plotnsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
-plotme <- MakeScreePlot( done_dat, nclust, randomz, imax, 0 )
-plotme
+#---- Cluster analysis Part 2 - Create working set of N clusters ----
 
-#---- Create a working set of N clusters (N based on scree plot) to further assess cluster number. ----
+#-- SETUP for clustering and figure labeling ----
+# confirm data subset as desired 
+use_dat <- done_dat[ , !grepl("DEC", names(done_dat)) ]
+nclust  <- 9 # the number of clusters based on scree plot, above.
 
-nclust  <- 7 # the number of clusters based on scree plot, above.
-#nsample <- 500000 # a larger sample for more robust classification
+clust_note <- "seasonal_JUL_"
+title_text <- "9 clusters"
 
-#sidx <- sample( 1:length( stack_data_clean[ , 1] ), nsample )
-#samp <- stack_data_clean[ sidx, ]
+cluster_result <- kmeans(use_dat, centers=nclust, nstart=randomz, iter.max=imax) 
 
-samp <- done_dat
+# Setup text for plot and file names 
 
-cluster_result <- kmeans(samp, centers=nclust, nstart=randomz, iter.max=imax) 
+# Save the current cluster.
+JUL_9clust <- cluster_result
 
-#---- Part 2b: Create heat map of within-cluster standard deviations ----
 
-# Define color palette
-pal_heat <- rev( brewer.pal(n = nclust, name = "RdYlBu")) # heat map palette
+#---- Part 3: Cluster analysis diagnostic plots  ----
 
-profile_data <- as.data.frame( cbind(cluster = cluster_result$cluster, samp ) )
+# The cluster and data to use in the plots
+use_clust <- JUL_9clust
+use_dat   <- use_dat
 
-cluster_sd <- profile_data %>%
-  group_by(cluster) %>%
-  summarise_all(sd)
+#---- Heat map of within-cluster standard deviations ----
+heat_map <- PlotHeatMap( use_clust$cluster, use_dat, title_text  ) 
+heat_map
+#---- Examine silhouette plot of the WORKING clusters  ----
+c_dist <- dist( use_dat )
+sk <- silhouette(use_clust$cluster, c_dist)
+sil_plot <- plot(sk, col = 1:nclust, border=NA, main = "" )
 
-x <- as.data.frame( cluster_sd )
-head(x)
-xm <- melt( x, id.var = "cluster" )
-
-z_heat <- ggplot(xm, aes(x=cluster, y=variable, fill=value) ) +
-  geom_tile() +
-  scale_fill_gradientn(colours = pal_heat) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  labs(title = "", x = "Clusters", y = "Predictors", fill = "Value")
-z_heat
-
-#---- Part 2c: Examine silhouette plot of the WORKING clusters  ----
-# Uses the predictor values and the corresponding assigned cluster
-
-cs <- cluster_result$cluster
-c_dist <- dist(samp)
-sk <- silhouette(cs, c_dist)
-
-plot(sk, col = 1:nclust, border=NA, main = "" )
-
-#---- Part 3: Detailed examination of N clusters  ----
-#---- Part 3a: Show cluster groupings using PCA ----
-
-z <- as.data.frame( cbind(cluster = cs, done_dat ) )
-pca_results <- ClusterPCAall( z )
+#---- Show cluster groupings using PCA ----
+pca_results <- ClusterPCAall( cbind(cluster = use_clust$cluster, use_dat ) )
 names( pca_results ) <- c("loadings", "plot1","plot2")
 
-pca_results$plot1
 #Percentage of variance explained by dimensions
-#eigenvalue <- round(get_eigenvalue(res_pca), 1)
-#var_percent <- eigenvalue$variance.percent
+eigenvalues <- round(get_eigenvalue(pca_results[[1]]), 2)
+var_percent <- eigenvalues$variance.percent
 
-#---- Part 3b: Violins of predictor contributions to WORKING clusters ----
+#---- Violins of predictor contributions to WORKING clusters ----
+v_plots <- PlotViolins( use_clust$cluster, use_dat )
 
-x <- done_dat
-x$cluster <- as.factor( cluster_result$cluster )
 
-y <- x %>%
-  pivot_longer(cols = -cluster, names_to = "predictor", values_to = "value")
-
-# Create violin plot
-vplots <- 
-  ggplot(y, aes(x = cluster, y = value, fill = cluster)) +
-  geom_violin(trim = FALSE) +
-  facet_wrap(~ predictor, scales = "free_y") +
-  theme_minimal() +
-  labs(title = "Violin Plots of Predictors Across k-means Clusters",
-       x = "Cluster",
-       y = "Value")
-vplots
-
-#---- Part 3c: Spatialize and display the WORKING clusters ----
+#---- Part 4: Map the working point clusters ----
 # Jul22: Currently using points here. 
-#   For a raster, see the code in the DFO classification version.
+# For a raster, see the code in the DFO classification version.
 
-pts <- data.frame(x = kd_pts$X, y = kd_pts$Y, cluster = cluster_result$cluster)
-
+pts <- data.frame(x = kd_pts$X, y = kd_pts$Y, cluster = use_clust$cluster)
 # 32609 is the CRS for UTM Zone 9N, the projection of the FVCOM data
 sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = 32609)
 
-hist( pts$cluster )
-ggplot(sf_pts, aes(color = factor(cluster))) + geom_sf()
+theme_set(theme_gray()) # Reset ggplot() defaults
+clust_map <- ggplot(sf_pts, aes(color = factor(cluster))) +
+  geom_sf( size=0.8) + theme_minimal() +
+  labs(color = "Clusters") +
+  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
+  theme(legend.position = "bottom") +
+  theme(
+    axis.text.x = element_text(size = 8),
+    axis.text.y = element_text(size = 8),
+    legend.key.size = unit(0.6, "lines"),    # smaller legend keys (boxes/symbols)
+    legend.text = element_text(size = 8),    # smaller legend labels/text
+    legend.title = element_text(size = 10) )   # (optional) smaller legend title)
+#  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
+#  scale_y_continuous(expand = c(0, 0)) + scale_x_continuous(expand = c(0, 0)) +
+#  
+clust_map
 
-#Output a shape file
-st_write(sf_pts, "cluster_points.shp", delete_layer = TRUE)
+# Output a shape file
+# sf_pts created above
+outname <- paste0( "LSSM_Results_v", as.character(dim(use_dat)[[2]]), "_c", nclust )
+st_write(sf_pts, paste0( results_dir, outname, ".shp"), delete_layer = TRUE)
+
+# Define color palette - Max N for Accent is 8
+#pal_clust <- brewer.pal(n = nclust, "Accent") 
 
 
 
 
-# Define color palette
-pal_clust <- brewer.pal(n = nclust, "Accent") # Max for Accent is 8
+#---- Standardize pairs of clusters ----
 
+
+km_ref <- JUL_9_clust
+km_new <- DEC_9_clust
+
+# Cross-tab BEFORE alignment
+cat("\nContingency (ref vs new) BEFORE alignment:\n")
+print( table(km_ref$cluster, km_new$cluster) )
+
+# ---- Align by membership overlap ----
+align <- match_clusters_by_overlap(km_ref$cluster, km_new$cluster)
+
+cat("\nMapping (index = new label, value = ref label):\n")
+print(align$mapping)
+
+cat("\nContingency used for assignment:\n")
+print(align$contingency)
+
+# Check AFTER alignment
+cat("\nContingency (ref vs aligned) AFTER alignment:\n")
+print(table(km_ref$cluster, align$aligned))
+
+
+
+# Prep the FVCOM data ... 
+names( done_dat )
+str(sf_pts)
+
+km_ref <- JUL_9_clust
+km_new <- DEC_9_clust
+
+# Standardize the predictor names ... 
+colnames(km_ref$centers) <- gsub("_JUL_", "_", colnames(km_ref$centers), fixed = TRUE)
+colnames(km_new$centers) <- gsub("_DEC_", "_", colnames(km_new$centers), fixed = TRUE)
+
+# ---- Usage ----
+# Assume you already have:
+#   km_ref   <- kmeans(X_ref, centers = K, nstart = 25)
+#   km_new   <- kmeans(X_new, centers = K, nstart = 25)
+# and a coords data frame `pts` with columns x,y in the SAME row order as X_ref/X_new.
+
+aln <- align_kmeans_by_overlap(km_ref, km_new)
+
+# Check alignment quality
+table(km_ref$cluster, aln$aligned)
+
+
+# Random, vivid, distinct colors (HCL space)
+random_pal <- function(K, seed = NULL, l = 65, c = 100) {
+  if (!is.null(seed)) set.seed(seed)
+  hues <- sample(seq(0, 360 - 360 / K, length.out = K))
+  stats::setNames(grDevices::hcl(h = hues, c = c, l = l), as.character(1:K))
+}
+
+# Example:
+pal <- random_pal(K, seed = 42)   # set seed for reproducible "random"
+
+# pts must be the same row order used for kmeans
+p_ref <- ggplot(pts, aes(x, y, color = factor(km_ref$cluster))) +
+  geom_point(size = 1) + scale_color_manual(values = pal, drop = FALSE) +
+  coord_equal() + ggtitle("Reference")
+
+p_new <- ggplot(pts, aes(x, y, color = factor(aln$aligned))) +
+  geom_point(size = 1) + scale_color_manual(values = pal, drop = FALSE) +
+  coord_equal() + ggtitle("New (aligned to reference)")
+
+print(p_ref); print(p_new)
+
+# Or side-by-side if you have {patchwork}:
+# (p_ref | p_new)
+
+
+
+
+
+
+
+
+#---- Output images as png ----
+outname <- paste0( results_dir, "/", clust_note, "_scree_plot_v", as.character(dim(use_dat)[[2]]), ".png" )
+png(outname, width = 800, height = 600, res = 200)  # open PNG device
+scree_plot
+dev.off()    
+
+outname <- paste0( results_dir, "/", clust_note, "_heat_map_v", as.character(dim(use_dat)[[2]]), "_c", nclust, ".png" )
+png(outname, width = 800, height = 600, res = 200)  # open PNG device
+heat_map
+dev.off()    
+
+outname <- paste0( results_dir, "/", clust_note, "_violin_plots_v", as.character(dim(use_dat)[[2]]), "_c", nclust, ".png" )
+png(outname, width = 1200, height = 800, res = 200)  # open PNG device
+v_plots
+dev.off()    
+
+outname <- paste0( results_dir, "/", clust_note, "_clust_map_v", as.character(dim(use_dat)[[2]]), "_c", nclust, ".png" )
+png(outname, width = 1200, height = 800, res = 200)  # open PNG device
+clust_map
+dev.off()    
 
 
 #---- Knit and render Markdown file to PDF -----
 # First had to install the library tinytex.
 # then run >tinytex::install_tinytex()
 # ... and done. 
-rmarkdown::render( "Classification_LSSM_PDF.Rmd",   
-#rmarkdown::render( "Classification_test.Rmd",   
+#rmarkdown::render( "Classification_LSSM_PDF.Rmd",   
+
+outname <- paste0( "LSSM_Results_v", as.character(dim(use_dat)[[2]]), "_c", nclust )
+rmarkdown::render( "Classification_LSSM_results.Rmd",   
                    output_format = 'pdf_document',
                    output_dir    = results_dir,
-                   output_file = paste0( "LSSM_SPECtrim_testing_", today ))
+                   output_file = outname )
 
-
-#---- Some details on correlation analysis ... ----
-#-- Correlation across UN-scaled data layers ... 
-# foo <- getValues( scaled_layers )
-# foo_clean <- na.omit(stack_data)
-# pick <- sample( 1:length( foo_clean[ , 1] ), 10000 )
-# plot( foo_clean[ pick,'rugosity'] ~ foo_clean[ pick,'standard_deviation_slope'] )
-
-#---- ----
-
+#----
 # FIN.
 
 
