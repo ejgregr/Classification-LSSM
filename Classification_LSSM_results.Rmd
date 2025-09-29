@@ -40,53 +40,116 @@ Secondary objective is to produce a report in an RMD that compares the seasonal 
 We obtained FVCOM data for the region, summarized as mean, min, and max for the representative months of December and July. Ocean variables included currents, temperature, and salinity. Statistics were calculated at the surface and the bottom of each model node. Current values were interpolated from the model edges to the nodes. 
 
 ## Variable selection
-We first identified predictors likely to be relevant for each season based on kelp biology. We then examined the seasonal sets of predictors and removed highly correlated variables, ensuring that there were no cross-correlations greater than 0.60.
+We first examined the seasonal predictors for cross-correlations, and Where the correlation between two predictors was > 0.6, we removed one. Removal was based on the presumed relevance of each predictor to the seasonal biology of bull kelp.  
 
-For summer, we prioritized monthly surface temperatures, preferentially retaining the mean followed by the maximum as waters are generally still cool (i.e., unlikely to have reached critical temps REF). For salinity, we prioritized bottom salinity, also preferring the mean followed by the maximum to emphasize areas of well mixed, nutrient-rich ocean waters. We retained current predictors only if they were correlated at less than 0.6 with temperature or salinity, again preferentially retaining the mean followed by the maximum to emphasize areas of mixing.
+For summer, we prioritized monthly surface temperatures, preferentially retaining the mean followed by the maximum as waters are generally still cool (i.e., unlikely to have reached critical temps REF). For salinity, we prioritized bottom salinity, also preferring the mean followed by the maximum to emphasize areas of well mixed, nutrient-rich ocean waters. We retained current predictors only if they were correlated at less than 0.6 with temperature or salinity, again preferentially retaining the mean followed by the maximum to emphasize areas of mixing. For winter, given the importance of gametophyte settlement and transport, we prioritized mean bottom currents, temperature, and salinity, preferring means followed by minimum values.  
 
-For winter, given the importance of gametophyte settlement and transport, we prioritized mean bottom currents, temperature, and salinity, preferring means followed by minimum values. 
+We then normalized, scaled and centred the retained predictors to improve the shape and increase the comparability of the predictor contributions to the classification. We first examined the predictor distributions for outliers which can have high leverage in the analysis and make normalization difficult. We then assessed the normality of each distribution using skewness (the symmetry of a distribution). A skewness value between -1 and +1 can be considered normal, and -2 to +2 is acceptable (REF). Larger values suggest substantial non-normality. We applied transforms to normalise highly skewed distributions. We did not consider kurtosis, a related metric.
 
 # Results 
 ## Correlation analysis
+We applied a systematic process to identify and remove the most cross-correlated predictors. 
+
+### Summer (July)
+Correlations > 0.9 were largely temp and salinity min and max values correlated with averages. There was one instance of max correlated with min, for surface temperatures.
+
+At the 0.8 level, all four current speed predictors were fully cross-correlated. As this was summer, we preferentially retained surface measures. 
+
+At the 0.7 level, min bottom temperature was correlated with temp maxes at surface and bottom so the min was dropped. Finally, max bottom salinity and temp were correlated at -0.718, but both were retained as they are critical drivers of kelp suitability. Of the other **six** remaining predictors, all were correlated at less than 0.512.
+
+### Winter (December)
+As in summer, correlations > 0.9 were dominated by temp and salinity min and max values correlated with averages. For consistency, averages were removed. Min and max currents were also correlated > 0.9. We addressed the collectively with those in the 0.8 pass. 
+
+At the 0.8 level, winter had the same full cross-correlation among currents as summer, so we removed the same predictors. Winter min and max bottom temperature were also correlated at this level, and min was removed for consistency. 
+
+At the 0.7 level, bottom salt min and max were correlated, so we removed min as maximum salinity was believed more important as a signal of more oceanographic (less estuarine?) water.  We also removed max surf temp as this was correlated with both max bottom and surf min temp. Of the **seven** remaining predictors, all were correlated at less than 0.50.
+
+## Normality and standarisation
+
+Interesting question? What is the effect of normalizing the data if we want the data to tell us about clusters? Today this feels like it might misrepresent the influence of individual predictors? See the transformation of *dec_SALT_surf_min* for an example. In any case, it seems like similar transforms should be applied to the same predictors across seasons.   
+
+Minimum salinity at surface the only predictor exceeding a skewness of 2.0 for either season.  
 
 
+\newpage
+<!-- 
+- If you need a **caption**, use `fig.pos='H'` and load the `float` package.  
+- If you don’t need a caption, omit `fig.cap` and the plot is treated as inline content.  
+-->
 
+```{r SummerHistos, results='asis', echo=FALSE, fig.cap="Values and distribution of summer predictors, before and after transformation and scaling.", fig.width=7, fig.height=9, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
 
+( hist1 / hist3 ) 
+#+ plot_layout(heights = c(1, 1))
 
-
-When examining cross-correlations, currents tended to be correlated with each other, as 
-well as with chemistry. From a total of 36 predictors (across 2 depths, 2 seasons, and 3 aggregations),
-11 were found to be correlated at < 0.60. 
-
-```{r Histograms, results='asis', echo=FALSE }
-hist1
-hist2
-hist3
 ```
 
-## Seasonal comparison
-There are 4 predictors left for winter (DEC). Scree plot suggests up to 9 clusters. No clear 'break' in the curve. 
-There are 7 predictors left for summer (JUL). Scree plot is similar to winter, in that up to 9 clusters seem warranted.
+```{r WinterHistos, results='asis', echo=FALSE, fig.cap="Values and distribution of winter predictors, before and after transformation and scaling.", fig.width=7, fig.height=9, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
+
+( hist2 / hist4 )
+```
 
 
+## Cluster selection and diagnostics
+Scree plots for both seasons suggest a maximum of 9 clusters. Somewhat clearer for the December data. A lower number is harder to discern but 4 could be reasonable. 
 
-```{r, ScreePlotDescripTable, echo=FALSE, escape=FALSE, fig.pos='H'}
+```{r ScreePlots, results='asis', echo=FALSE, fig.cap="Scree plots for July and September", fig.width=7, fig.height=5 }
+( scree_plot1 | scree_plot2 )
+
+```
+
+Here there is a call to plotting a description table of the Scree plot. Not sure what that means. 
+```{r, ScreePlotDescripTable, echo=FALSE, escape=FALSE }
 #Only needed once per number of variables. 
-scree_plot
+#scree_plot
 
 ```
 
-```{r Plots, results='asis', echo=FALSE }
+## Heat maps
+Surface currents have the highest variability across clusters in summer, while temperature have low variance across all but cluster 4.  
+Winter predictors generally have less  extreme variability overall, but also fewer very low values than summer. 
 
-heat_map
-
-v_plots
-
-hist( cluster_result$cluster )
-
-clust_map
+```{r Heatmaps, results='asis', echo=FALSE, fig.cap="Heat maps showing the variance of predictors for each cluster for summer (top) and Winter (bottom) clusters", fig.width=6, fig.height=7 }
+( heat_map1 / heat_map2 )
 
 ```
+A bit more heat text before the Sill plots ... 
+
+## Silhouette plots
+```{r Sillplots, results='asis', echo=FALSE, fig.width=6, fig.height=4, fig.pos='H' }
+
+# patchwork is for ggplots only ... 
+jul_dist <- dist( jul_dat )
+sk1 <- silhouette(jul_clust$cluster, jul_dist)
+
+dec_dist <- dist( dec_dat )
+sk2 <- silhouette(dec_clust$cluster, dec_dist)
+
+plot(sk1, col = 1:nclust, border=NA, main = "Summer clusters" ) 
+plot(sk2, col = 1:nclust, border=NA, main = "Winter clusters" )
+
+
+#p <- fviz_silhouette(sk, label = FALSE)  # ggplot object
+#p + scale_y_continuous(limits = c(0, 0.75),
+#                       breaks = seq(0, 0.75, 0.25),
+#                       expand = expansion(mult = c(0, 0.02)))
+
+```
+
+
+## Cluster analysis 
+```{r clusterplots, results='asis', echo=FALSE, fig.cap="Principal component loadings by predictors in July and December", fig.width=6, fig.height=7, fig.align='center', out.extra='keepaspectratio', fig.pos='H' }
+( jul_pca$plot1 / dec_pca$plot1 )
+
+```
+
+
+## Violin plots
+```{r Violplots, results='asis', echo=FALSE, fig.cap="Violin plots of predictors across the July and December k-means clusters.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
+( jul_viols / dec_viols )
+
+```
+
 
 
 <!-- THE END -->

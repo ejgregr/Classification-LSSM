@@ -76,20 +76,18 @@ align_kmeans_by_overlap <- function(km_ref, km_new) {
 
 
 # Given a correlation matrix, return the highest correlation and the variable pair.
-showHighestPairs <- function (ctab){
-  y <- max(ctab, na.rm=T)
-  x <- which(ctab == y, arr.ind = TRUE)
-  col_idx <- x[, 2]
-  row_idx <- x[, 1]
+# NOTE: Algorithm fails down at nrom(idx) when a single correlation is found in the cortable.
+#     ---> Soln is just to lower the threshold. :\
+showHighestPairs <- function(preds, threshold) {
   
-  print( y )
-  print( rownames(cor_table)[row_idx] )
-  print( colnames(cor_table)[col_idx] )
-}
-
-
-showHighestPairs2 <- function(ctab, threshold) {
-  idx <- which(ctab >= threshold, arr.ind = TRUE)
+  cor_table <- round( cor( preds ), 3)
+  cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
+  
+  high_rows <- apply(cor_table, 1, function(row) any(abs(row) > threshold, na.rm = TRUE))
+  ctab <- cor_table[ high_rows, ]
+  
+  ctab2 <- abs(ctab)
+  idx <- which(ctab2 >= threshold, arr.ind = TRUE)
   if (nrow(idx) == 0) {
     message("No correlations above threshold.")
     return(invisible(NULL))
@@ -102,7 +100,6 @@ showHighestPairs2 <- function(ctab, threshold) {
     cat(sprintf("Row: %s, Col: %s, Correlation: %.3f\n", row_name, col_name, value))
   }
 }
-
 
 
 #---- Returns a stack of integerized rasters from a raster stack ----
@@ -118,22 +115,6 @@ Integerize <- function( in_layers, sig = 1000 ) {
   return( int_layers )
 }
 
-
-PlotHists <- function( stack_dat ) {
-  sk_list <- NULL
-  w <- colnames(stack_dat)
-  
-  for (i in 1:dim( stack_dat )[2]){
-    x <- stack_dat[,i]
-    y <- skewness(x, na.rm = TRUE)
-    sk_list <- c(sk_list, y)
-    y <- paste0( "Skew=", round(y, 3))
-    hist( x, main = w[i] )
-    xy <- par("usr")
-    xyrange <- c( xy[2]-xy[1], xy[4]-xy[3] )
-    text( xy[1]+xyrange[1]/4, xy[4]-xyrange[2]/10, y )
-  }
-}
 
 # Uses global variables. Relies on stack_data and transformed stack data (t_stack)
 MakeSkewTable <- function() {
@@ -212,14 +193,20 @@ PlotHistos <- function( adf, ptitle ){
     facet_wrap(~ variable, scales = "free") +
     theme_minimal() +
     labs(title = ptitle) +
-    theme(plot.title = element_text(hjust = 0.5))
+    theme(plot.title = element_text(hjust = 0),
+          axis.title.x = element_blank())
 }
 
 
-PlotHeatMap <- function( clust, dat, main_txt = "Heat Map" ){
+PlotHeatMap <- function( clust, dat, main_txt = "" ){
   # Define color palette
   pal_heat <- rev( brewer.pal(n = nclust, name = "RdYlBu")) # heat map palette
-  profile_data <- as.data.frame( cbind(cluster = clust, dat ) )
+  
+  profile_data <- data.frame(
+    cluster = factor(clust, levels = seq_len(nclust)),
+    dat,
+    check.names = FALSE
+  )
   
   cluster_sd <- profile_data %>%
     group_by(cluster) %>%
@@ -232,7 +219,7 @@ PlotHeatMap <- function( clust, dat, main_txt = "Heat Map" ){
     geom_tile() +
     scale_fill_gradientn(colours = pal_heat) +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    theme(axis.text.x = element_text(vjust = 1, hjust = 1)) +
     labs(title = main_txt, x = "Clusters", y = "Predictors", fill = "Value")
   return( z_heat )
 }
@@ -250,12 +237,36 @@ PlotViolins <- function( clusts, dat ){
     geom_violin(trim = FALSE) +
     facet_wrap(~ predictor, scales = "free_y") +
     theme_minimal() +
-    labs(title = "Violin Plots of Predictors Across k-means Clusters",
+    labs(title = "",
          x = "Cluster",
          y = "Value")
   
   return( vplots )
 }
+
+PlotMap <- function( coords, clust, titletxt) {
+  
+  pts <- data.frame(x = coords$X, y = coords$Y, cluster = clust$cluster)
+  # 32609 is the CRS for UTM Zone 9N, the projection of the FVCOM data
+  sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = 32609)  
+  
+  theme_set(theme_gray()) # Reset ggplot() defaults
+  clust_map <- ggplot(sf_pts, aes(color = factor(cluster))) +
+    geom_sf( size=0.8) + theme_minimal() +
+    labs(color = "Clusters") +
+    labs(title = titletxt, color = "Clusters") +
+    guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
+    theme(legend.position = "bottom") +
+    theme(
+      axis.text.x = element_text(size = 8),
+      axis.text.y = element_text(size = 8),
+      legend.key.size = unit(0.6, "lines"),    # smaller legend keys (boxes/symbols)
+      legend.text = element_text(size = 8),    # smaller legend labels/text
+      legend.title = element_text(size = 10) )   # (optional) smaller legend title)
+  #  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
+  #  scale_y_continuous(expand = c(0, 0)) + scale_x_continuous(expand = c(0, 0)) 
+}
+
 
 
 #---- MakeScreePlot: returns a ggplot. ----

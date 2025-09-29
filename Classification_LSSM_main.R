@@ -43,7 +43,8 @@ rm(list=ls(all=T))  # Erase environment.
 
 # Load necessary packages and functions ... 
  source( "classification_functions.R" )
-# Only if you need to reload FVCOM data 
+
+# Sourcing here reloads FVCOM data into kd_pts. Includes reading NETCDFs, interpolations, and clipping.
 #source( "netCDF_processing.R" )
 
 today <- format(Sys.Date(), "%Y-%m-%d")
@@ -59,11 +60,9 @@ results_dir<- 'C:/Data/Git/Classification-LSSM/Results'
 # - The FVCOM data are only sub-sampled spatially, in ArcGIS.
 
 #---- Load FVCOM point data ----
-# -Jul 21 version of FVCOM clipped to KD extents
-#load( file = paste0( source_dir, '/FVCOM_point_data_2025-07-22.rData' ))
-
 # Sept 5 version. Minor code tweaks
-load( file = paste0( data_dir, '/FVCOM_point_data_2025-09-05.rData' ))
+# Loads structure kd_pts, 
+load( file = paste0( data_dir, '/FVCOM_point_data_2025-09-11.rData' ))
 
 str(kd_pts)
 fv_dat <- kd_pts
@@ -72,203 +71,211 @@ fv_dat <- kd_pts
 names(fv_dat) <- gsub("salinity", "salt", names(fv_dat))
 names(fv_dat) <- gsub("bottom",   "bott", names(fv_dat))
 names(fv_dat) <- gsub("surface",  "surf", names(fv_dat))
-colnames(fv_dat)
+
+# And re-order the column names to facilitate comparison of figures
+# Nice bit of perl from chatgpt! 
+colnames(fv_dat) <- sub(
+      "(^[^_]+)_([A-Z]+)_(.*)",
+      "\\L\\2\\E_\\U\\1\\E_\\3",
+      colnames(fv_dat),
+    perl = TRUE
+  )
+
 
 # remove (X,Y) for the analysis
 #plot( kd_pts$X, kd_pts$Y)
-fv_dat <- fv_dat[ , !(names(fv_dat) %in% c("X", "Y")) ]
+fv_dat    <- fv_dat[ , !(names(fv_dat) %in% c("X", "Y" )) ]
+fv_coords <- kd_pts[ , c("X", "Y" ) ]
 
-#---- Predictor correlations ----
-cor_table <- round( cor( fv_dat ), 3)
-cor_table[lower.tri(cor_table, diag=TRUE)] <- NA
+#---- Correlation and standardization section ----
 
-high_rows <- apply(cor_table, 1, function(row) any(row > 0.5, na.rm = TRUE))
-z <- cor_table[ high_rows, ]
-showHighestPairs2( z, 0.5 )
+### Reduce correlation for July predictors
+jul_dat <- fv_dat[ , !grepl("dec", names(fv_dat)) ]
 
-# Start removing variables. 
+# Pass 1: remove all cors > 0.9
+showHighestPairs( jul_dat, 0.9)
+jul_dat <- jul_dat[ , !grepl("jul_SALT_bott_ave", names(jul_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_TEMP_bott_ave", names(jul_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_SALT_surf_ave", names(jul_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_TEMP_surf_ave", names(jul_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_TEMP_surf_min", names(jul_dat)) ]
 
-# Pass 1:
-# These are perfectly correlated. Odd?
-# "salt_DEC_bott_ave" "temp_DEC_bott_ave" "salt_DEC_surf_max"
-# "salt_DEC_surf_ave" "temp_DEC_surf_ave" "CS_DEC_surf_ave"  
-# plot( fv_dat$temp_DEC_surf_ave, fv_dat$temp_DEC_bott_ave)
-# Drop bottoms.
-fv_dat <- fv_dat[ , !grepl("salt_DEC_bott_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_DEC_bott_ave", names(fv_dat)) ]
-# Retain chemistry over currents.
-fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_ave", names(fv_dat)) ]
+# Pass 2: remove all cors > 0.8
+showHighestPairs( jul_dat, 0.8)
+# Remove all July bottom currents
+jul_dat <- jul_dat[ , !grepl("jul_CS_bott", names(jul_dat)) ]
 
-# Pass 2: 
-# 15 correlations >= 0.9. First drop correlated averages
-fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_JUL_bott_ave", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_ave", names(fv_dat)) ]
-# min correlated with max, prefer max
-fv_dat <- fv_dat[ , !grepl("temp_JUL_surf_min", names(fv_dat)) ] 
-# remainder all correlated with Dec CS. Retain surface where possible 
-fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_min", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("CS_DEC_bott_max", names(fv_dat)) ]
-# Dec/Jan surf current max and mins correlated. Keep JUL
-fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_min", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("CS_DEC_surf_max", names(fv_dat)) ]
-# Retain min over average
-fv_dat <- fv_dat[ , !grepl("salt_JUL_surf_ave", names(fv_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_CS_surf_min", names(jul_dat)) ]
+jul_dat <- jul_dat[ , !grepl("jul_SALT_bott_min", names(jul_dat)) ]
 
-#Pass 3:
-# 8 correlations >= 0.8. First drop correlated averages
-#  retain max on temp, and min on salt ...   
-fv_dat <- fv_dat[ , !grepl("temp_DEC_bott_min", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_max", names(fv_dat)) ]
-# Remaining 6 are all JUL currents 
-fv_dat <- fv_dat[ , !grepl("CS_JUL_surf_min", names(fv_dat)) ] # correlated w 3
-fv_dat <- fv_dat[ , !grepl("CS_JUL_bott_min", names(fv_dat)) ]
-# check if either further cor'd but not so drop bottom
-fv_dat <- fv_dat[ , !grepl("CS_JUL_bott_max", names(fv_dat)) ]
+# Pass 3: remove all cors > 0.5
+# NOTE cor=0.7 and 0.6 fail cuz there is only 1 ... 
+showHighestPairs( jul_dat, 0.4)
+# Cor btwn max bott temp and max bottom salt = -0.72 but both retain cuz chemistry.
+names(jul_dat)
 
-#Pass4:
-# 9 correlations >= 0.6. Most min/max pairs, drop min or max depending
-fv_dat <- fv_dat[ , !grepl("salt_DEC_bott_max", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_min", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("temp_JUL_bott_min", names(fv_dat)) ]
-# keep a bottom value for DEC
-fv_dat <- fv_dat[ , !grepl("temp_DEC_surf_max", names(fv_dat)) ]
-# min salts at bottom and surface correlated across seasons. 
-# retain Jul surface and Dec bot
-fv_dat <- fv_dat[ , !grepl("salt_JUL_bott_min", names(fv_dat)) ]
-fv_dat <- fv_dat[ , !grepl("salt_DEC_surf_min", names(fv_dat)) ]
 
-names(fv_dat)
-dim(fv_dat)
+### Reduce correlation for December predictors
+dec_dat <- fv_dat[ , !grepl("jul", names(fv_dat)) ]
 
-hist1 <- PlotHistos( fv_dat, "Untransformed, uncorrelated FVCOM predictors" )
-hist1
-# Above correlation analysis done using untransformed predictors. 
-# Now work on Normality 
+# Pass 1: remove all cors > 0.9
+showHighestPairs( dec_dat, 0.9)
+# reduce chemistry correlations
+dec_dat <- dec_dat[ , !grepl("dec_SALT_bott_ave", names(dec_dat)) ]
+dec_dat <- dec_dat[ , !grepl("dec_TEMP_bott_ave", names(dec_dat)) ]
+dec_dat <- dec_dat[ , !grepl("dec_SALT_surf_ave", names(dec_dat)) ]
+dec_dat <- dec_dat[ , !grepl("dec_TEMP_surf_ave", names(dec_dat)) ]
+
+# Pass 2: remove all cors > 0.8
+showHighestPairs( dec_dat, 0.8)
+# Remove all Dec bottom currents
+dec_dat <- dec_dat[ , !grepl("dec_CS_bott", names(dec_dat)) ]
+dec_dat <- dec_dat[ , !grepl("dec_CS_surf_min", names(dec_dat)) ]
+# Remove min of temp correlation
+dec_dat <- dec_dat[ , !grepl("dec_TEMP_bott_min", names(dec_dat)) ]
+
+# Pass 3: remove all cors > 0.7
+showHighestPairs( dec_dat, 0.7)
+# Remove min of salt ... 
+dec_dat <- dec_dat[ , !grepl("dec_SALT_bott_min", names(dec_dat)) ]
+# Remove max of temp... 
+dec_dat <- dec_dat[ , !grepl("dec_TEMP_surf_max", names(dec_dat)) ]
+
+# Pass 3: remove all cors > 0.6
+showHighestPairs( dec_dat, 0.4)
+
+names(dec_dat)
+
+# Prepare histograms of seasonal Untransformed, uncorrelated FVCOM predictors
+hist1 <- PlotHistos( jul_dat, "Original FVCOM predictor values" )
+hist2 <- PlotHistos( dec_dat, "Original FVCOM predictor values" )
 
 #---- Transformation and scaling of uncorrelated predictors  ----
 print( "Transform the data  ... ")
 
-# Show predictors with abs(skew) > 1.
-skews <- apply(fv_dat, 2, skewness, na.rm = TRUE)
-skews[skews > 1]
+# As above, we'll do summer then winter ... 
 
-# MakeMoreNormal() is hard-coded based on trial and error. 
-# Adapted to FVCOM data
-tfv_dat <- MakeMoreNormal( fv_dat )
+# JUL predictors with abs(skew) > 1.
+jul_skew <- apply(jul_dat, 2, skewness, na.rm = TRUE)
+jul_skew[abs(jul_skew) > 1]
 
-dim(tfv_dat)
-hist2 <- PlotHistos( tfv_dat, "Transformed FVCOM predictors" )
-hist2
+# DEC predictors with abs(skew) > 1.
+dec_skew <- apply(dec_dat, 2, skewness, na.rm = TRUE)
+dec_skew[abs(dec_skew) > 1]
+
+# Only one predictor from each season exceeds a skew of 2.0
+# Those are fixed in place here. MakeMoreNormal() not required.
+x <- jul_dat[, "jul_SALT_surf_min"]
+floor <- 21
+y <- ifelse(x < floor, floor, x)
+y <- y^3
+jul_dat[, "jul_SALT_surf_min"] <- y
+
+x <- dec_dat[, "dec_SALT_surf_min"]
+floor <- 21
+y <- ifelse(x < floor, floor, x)
+y <- y^8
+dec_dat[, "dec_SALT_surf_min"] <- y
+
+#skewness(y)
+#hist(y, breaks=25)
 
 # Now scale and center the transformed data.
 print("Centering and scaling  ... ")
-x <- scale( tfv_dat, center = T,  scale = T )
-done_dat <- as.data.frame( x )
-hist3 <- PlotHistos( done_dat, "Transformed and scaled FVCOM predictors" )
-hist3
+
+x <- scale( jul_dat, center = T,  scale = T )
+jul_dat <- as.data.frame( x )
+
+x <- scale( dec_dat, center = T,  scale = T )
+dec_dat <- as.data.frame( x )
+
+hist3 <- PlotHistos( jul_dat, "Scaled and transformed predictors" )
+hist4 <- PlotHistos( dec_dat, "Scaled and transformed predictors" )
+
 
 #---- Final data selection ---- 
 # Any sequential dropping of predictors based on analytic results done here
-# So all clustering reflects the changes. 
-
-use_dat <- done_dat
-
-# Start with a seasonal comparison
-
-# Drop JuL for winter data only - yields only 3 predictors.
-use_dat <- use_dat[ , !grepl("JUL", names(use_dat)) ]
-
-# Drop current data to focus on water chemistry
-# use_dat <- use_dat[ , !grepl("CS", names(use_dat)) ]
-
-# * This is the df used throughout below *
-names( use_dat )
+# 09/12: Not sure we be doing any of this now with seasonal comparison. 
 
 
 #---- Cluster analysis Part 1 - Number of clusters  ----
+  set.seed <- 42 # Seed for reproducibility
+  randomz  <- 20 # the number of randomizations for kmeans to do.
+  imax     <- 25 # maximum iterations to try for convergence
+  
+  # Explore number of clusters using Within-sum-of-squares scree plot
+  # Runs kmeans with increasing number of clusters
+  nclust     <- 18 # number of clusters for scree plotnsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
+  scree_plot1 <- MakeScreePlot( jul_dat, nclust, randomz, imax, 0 )
+  scree_plot2 <- MakeScreePlot( dec_dat, nclust, randomz, imax, 0 )
+  
+  
+  #---- Cluster analysis Part 2 - Create working set of N clusters ----
+  
+  #-- SETUP for clustering and figure labeling ----
+  nclust  <- 9 # the number of clusters based on scree plot, above.
+  cl_text <- "9"
+  
+  #-- RUn the clusters
+  names( jul_dat )
+  names( dec_dat )
+  
+  jul_clust <- kmeans(jul_dat, centers=nclust, nstart=randomz, iter.max=imax) 
+  dec_clust <- kmeans(dec_dat, centers=nclust, nstart=randomz, iter.max=imax) 
+  
 
-set.seed <- 42 # Seed for reproducibility
-randomz  <- 20 # the number of randomizations for kmeans to do.
-imax     <- 25 # maximum iterations to try for convergence
-
-# Explore number of clusters using Within-sum-of-squares scree plot
-# Runs kmeans with increasing number of clusters
-nclust     <- 18 # number of clusters for scree plotnsample  <- 50000 # Scree plot needs a subsample to run reasonably. 
-scree_plot <- MakeScreePlot( use_dat, nclust, randomz, imax, 0 )
-scree_plot
-
-
-#---- Cluster analysis Part 2 - Create working set of N clusters ----
-
-#-- SETUP for clustering and figure labeling ----
-# confirm data subset as desired 
-use_dat <- done_dat[ , !grepl("DEC", names(done_dat)) ]
-nclust  <- 9 # the number of clusters based on scree plot, above.
-
-clust_note <- "seasonal_JUL_"
-title_text <- "9 clusters"
-
-cluster_result <- kmeans(use_dat, centers=nclust, nstart=randomz, iter.max=imax) 
-
-# Setup text for plot and file names 
-
-# Save the current cluster.
-JUL_9clust <- cluster_result
-
-
-#---- Part 3: Cluster analysis diagnostic plots  ----
+#---- Part 3: Cluster diagnostic plots  ----
 
 # The cluster and data to use in the plots
-use_clust <- JUL_9clust
-use_dat   <- use_dat
-
 #---- Heat map of within-cluster standard deviations ----
-heat_map <- PlotHeatMap( use_clust$cluster, use_dat, title_text  ) 
-heat_map
-#---- Examine silhouette plot of the WORKING clusters  ----
-c_dist <- dist( use_dat )
-sk <- silhouette(use_clust$cluster, c_dist)
-sil_plot <- plot(sk, col = 1:nclust, border=NA, main = "" )
+heat_map1 <- PlotHeatMap( jul_clust$cluster, jul_dat ) 
+heat_map2 <- PlotHeatMap( dec_clust$cluster, dec_dat ) 
+
+#---- Examine silhouette plots  ----
+# This code duplicated in RMD file so plots are generated. 
+
+c_dist <- dist( jul_dat )
+sk <- silhouette(jul_clust$cluster, c_dist)
+# Call generic plot() in the r script
+jul_silplot <- plot(sk, col = 1:nclust, border=NA, main = "" )
+
+c_dist <- dist( dec_dat )
+sk <- silhouette(dec_clust$cluster, c_dist)
+dec_silplot <- plot(sk, col = 1:nclust, border=NA, main = "" )
+
 
 #---- Show cluster groupings using PCA ----
-pca_results <- ClusterPCAall( cbind(cluster = use_clust$cluster, use_dat ) )
-names( pca_results ) <- c("loadings", "plot1","plot2")
+jul_pca <- ClusterPCAall( cbind(cluster = jul_clust$cluster, jul_dat ) )
+names( jul_pca ) <- c("loadings", "plot1","plot2")
+
+dec_pca <- ClusterPCAall( cbind(cluster = dec_clust$cluster, dec_dat ) )
+names( dec_pca ) <- c("loadings", "plot1","plot2")
+
 
 #Percentage of variance explained by dimensions
-eigenvalues <- round(get_eigenvalue(pca_results[[1]]), 2)
-var_percent <- eigenvalues$variance.percent
+jul_eigens <- round(get_eigenvalue(jul_pca[[1]]), 2)
+dec_eigens <- round(get_eigenvalue(dec_pca[[1]]), 2)
+
+var_percent <- jul_eigens$variance.percent
 
 #---- Violins of predictor contributions to WORKING clusters ----
-v_plots <- PlotViolins( use_clust$cluster, use_dat )
+jul_viols <- PlotViolins( jul_clust$cluster, jul_dat )
+dec_viols <- PlotViolins( dec_clust$cluster, dec_dat )
 
 
 #---- Part 4: Map the working point clusters ----
-# Jul22: Currently using points here. 
-# For a raster, see the code in the DFO classification version.
+# NB: Using points here. For a raster, see the DFO version.
 
-pts <- data.frame(x = kd_pts$X, y = kd_pts$Y, cluster = use_clust$cluster)
-# 32609 is the CRS for UTM Zone 9N, the projection of the FVCOM data
-sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = 32609)
+jul_map <- PlotMap( fv_coords, jul_clust, "July Clusters" )
+dec_map <- PlotMap( fv_coords, dec_clust, "December Clusters" )
 
-theme_set(theme_gray()) # Reset ggplot() defaults
-clust_map <- ggplot(sf_pts, aes(color = factor(cluster))) +
-  geom_sf( size=0.8) + theme_minimal() +
-  labs(color = "Clusters") +
-  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
-  theme(legend.position = "bottom") +
-  theme(
-    axis.text.x = element_text(size = 8),
-    axis.text.y = element_text(size = 8),
-    legend.key.size = unit(0.6, "lines"),    # smaller legend keys (boxes/symbols)
-    legend.text = element_text(size = 8),    # smaller legend labels/text
-    legend.title = element_text(size = 10) )   # (optional) smaller legend title)
-#  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
-#  scale_y_continuous(expand = c(0, 0)) + scale_x_continuous(expand = c(0, 0)) +
-#  
-clust_map
+jul_map / dec_map
+
+# NEXT: Standardize the cluster numbers by space
+
+
+#================ STOP HERE for now ====================
+
 
 # Output a shape file
 # sf_pts created above
@@ -388,7 +395,7 @@ dev.off()
 # ... and done. 
 #rmarkdown::render( "Classification_LSSM_PDF.Rmd",   
 
-outname <- paste0( "LSSM_Results_v", as.character(dim(use_dat)[[2]]), "_c", nclust )
+outname <- paste0( "LSSM_Results_v", as.character(dim(dec_dat)[[2]]), "_c", nclust )
 rmarkdown::render( "Classification_LSSM_results.Rmd",   
                    output_format = 'pdf_document',
                    output_dir    = results_dir,

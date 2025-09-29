@@ -121,13 +121,11 @@ CalcCurspd <- function(df) {
   as.data.frame(curspd_list)
 }
 
-
 # A kludge to temporarily deal with the node/faces problem
 TruncToShortest <- function(lst) {
   minlen <- min(lengths(lst))
   lapply(lst, function(x) x[seq_len(minlen)])
 }
-
 
 # Interpolates a vector of values at x/y nodes to a raster grid
 # Keeping just for fun. 
