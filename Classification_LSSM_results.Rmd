@@ -30,9 +30,8 @@ support the resolution we are interested in. Lots of geography missing. So, need
 develop a clear set of objectives. 
 
 # Objectives
-Develop a seasonal (winter/summer) classification relevant to bull kelp using the native resolution of the FVCOM data.
-The expectation is that this could lead to a better understanding of how and why bull kelp distributions have been limited recently in the area. 
-
+Develop a seasonal (winter/summer) classification relevant to bull kelp using the native resolution of the FVCOM data.  
+The expectation is that this could lead to a better understanding of how and why bull kelp distributions have been limited recently in the area.  
 Secondary objective is to produce a report in an RMD that compares the seasonal clusterings. 
 
 # Methods
@@ -40,24 +39,31 @@ Secondary objective is to produce a report in an RMD that compares the seasonal 
 We obtained FVCOM data for the region, summarized as mean, min, and max for the representative months of December and July. Ocean variables included currents, temperature, and salinity. Statistics were calculated at the surface and the bottom of each model node. Current values were interpolated from the model edges to the nodes. 
 
 ## Variable selection
-We first examined the seasonal predictors for cross-correlations, and Where the correlation between two predictors was > 0.6, we removed one. Removal was based on the presumed relevance of each predictor to the seasonal biology of bull kelp.  
+To better understand the role of the available predictors in structuring the coastal ocean, We applied a systematic process to identify and remove the most cross-correlated predictors. we began by considering which predictors were most likely to be important to bull kelp in each of the two seasons. We then examined the predictors for cross-correlations in each season, and Where the correlation between two predictors was > 0.6, we considered removing one. Consideration of which correlated predictor to remove was based on the presumed relevance of each predictor to the seasonal biology of bull kelp. Thus, we developed a specific set of predictors for winter and summer.  
 
-For summer, we prioritized monthly surface temperatures, preferentially retaining the mean followed by the maximum as waters are generally still cool (i.e., unlikely to have reached critical temps REF). For salinity, we prioritized bottom salinity, also preferring the mean followed by the maximum to emphasize areas of well mixed, nutrient-rich ocean waters. We retained current predictors only if they were correlated at less than 0.6 with temperature or salinity, again preferentially retaining the mean followed by the maximum to emphasize areas of mixing. For winter, given the importance of gametophyte settlement and transport, we prioritized mean bottom currents, temperature, and salinity, preferring means followed by minimum values.  
+For summer, we prioritized monthly surface temperatures, preferentially retaining the mean followed by the maximum as waters are generally still cool (i.e., unlikely to have reached critical temps REF). For salinity, we prioritised bottom salinity, also preferring the mean followed by the minimum to emphasise areas of freshwater influence. We retained current predictors only if they were correlated at less than 0.6 with temperature or salinity, again preferentially retaining the mean followed by the maximum to emphasize areas of mixing.  
+
+For winter, kelp gametophytes are likely influenced by mean bottom temperature, mean (or min) bottom salinity, as well as currents in some way. Given the importance of gametophyte settlement and transport, we prioritised mean bottom currents, temperature, and salinity, preferring means followed by minimum values.  
 
 We then normalized, scaled and centred the retained predictors to improve the shape and increase the comparability of the predictor contributions to the classification. We first examined the predictor distributions for outliers which can have high leverage in the analysis and make normalization difficult. We then assessed the normality of each distribution using skewness (the symmetry of a distribution). A skewness value between -1 and +1 can be considered normal, and -2 to +2 is acceptable (REF). Larger values suggest substantial non-normality. We applied transforms to normalise highly skewed distributions. We did not consider kurtosis, a related metric.
 
 # Results 
 ## Correlation analysis
-We applied a systematic process to identify and remove the most cross-correlated predictors. 
 
-### Summer (July)
+### Kwa Kwa region
+#### Summer (July)
+16 correlations > 0.9 were found. We removed predictors in the following order: min surface salinity and temperature, this left 8 correlations, all of which were average correlated with either max or min. We next removed min bottom temperature and max bottom salinity. This left 6 correlations. As we prioritized mean of maximum values in this season, we next removed max surface and bottom temperatures, preferring to retain the averages.  
+
+
+### Village region
+#### Summer (July)
 Correlations > 0.9 were largely temp and salinity min and max values correlated with averages. There was one instance of max correlated with min, for surface temperatures.
 
 At the 0.8 level, all four current speed predictors were fully cross-correlated. As this was summer, we preferentially retained surface measures. 
 
 At the 0.7 level, min bottom temperature was correlated with temp maxes at surface and bottom so the min was dropped. Finally, max bottom salinity and temp were correlated at -0.718, but both were retained as they are critical drivers of kelp suitability. Of the other **six** remaining predictors, all were correlated at less than 0.512.
 
-### Winter (December)
+#### Winter (December)
 As in summer, correlations > 0.9 were dominated by temp and salinity min and max values correlated with averages. For consistency, averages were removed. Min and max currents were also correlated > 0.9. We addressed the collectively with those in the 0.8 pass. 
 
 At the 0.8 level, winter had the same full cross-correlation among currents as summer, so we removed the same predictors. Winter min and max bottom temperature were also correlated at this level, and min was removed for consistency. 
@@ -147,6 +153,13 @@ plot(sk2, col = 1:nclust, border=NA, main = "Winter clusters" )
 ## Violin plots
 ```{r Violplots, results='asis', echo=FALSE, fig.cap="Violin plots of predictors across the July and December k-means clusters.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
 ( jul_viols / dec_viols )
+
+```
+
+
+## Mapped clusters
+```{r mapplots, results='asis', echo=FALSE, fig.cap="Spatial distrubiton of clusters in July and December.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
+( jul_map / dec_map )
 
 ```
 

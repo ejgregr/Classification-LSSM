@@ -211,7 +211,7 @@ str(big_df)
 
 
 #---- Final data preparation step ----
-# Refactor the dataframe to remove redundancies
+# Re-factor the dataframe to remove redundancies
 # First pull the coordinates - only need them once! :)
 xy <- data.frame( x = big_df$x_DEC_bottom_ave, y = big_df$y_DEC_bottom_ave )
 # Now drop all the coord and current fields - currents will be handled separately
@@ -223,14 +223,18 @@ dim(big_df)
 names(big_df)
 #str(big_df)
 
-#---- Clip to Village Sea environs ----
+#---- Clip to specified spatial extents ----
 # We're going to work in UTM Zone 9 so that the clipped points can be used 
 # to then trim the rest of the data. 
 
 kd_bounds <- st_read( "c:\\Data\\SpaceData\\Broughton\\FVCOM_trim.shp")
 utm_pts <- st_as_sf(big_df, coords = c("x", "y"), crs = "+proj=utm +zone=9 +datum=WGS84 +units=m +no_defs")
 albers_pts <- st_transform(utm_pts, coords = c("x", "y"), crs = albers_crs)
+
 kd_pts <- albers_pts[ kd_bounds, ]
+# OR just use the unclipped data ... 
+# kd_pts <- albers_pts
+
 
 ggplot() +
   geom_sf(data = kd_bounds, fill = NA, color = "blue", lwd = 1) +
@@ -251,7 +255,6 @@ ggplot(kd_pts, aes(x = X, y = Y, color = CS_DEC_bottom_ave)) +
 
 
 # Save the results!
-today <- format(Sys.Date(), "%Y-%m-%d")
 target_dir <- data_dir # From main script.
 save( kd_pts, file = paste0( target_dir, '/FVCOM_point_data_', today, '.rData' ))
 
