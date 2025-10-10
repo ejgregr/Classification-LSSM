@@ -49,7 +49,12 @@ print('Starting Classification  ... LSSM Version 2: Points not rasters')
 rm(list = ls(all = T))  # Erase environment.
 today <- format(Sys.Date(), "%Y-%m-%d")
 
-# Directories. Will be created if they don't exist.
+#======================== Directories and constants ===========================
+# Projections as EPSG codes
+albers_crs <- 3005 # Or for newer datasets: albers_crs <- 3153
+UTM_crs    <- 26909 # For Zone 9N NAD83. Or for WGS84: 32609
+
+# Will be created if they don't exist.
 source_dir <- 'C:/Data/SpaceData/Broughton/netcdf'
 data_dir   <- 'C:/Data/Git/Classification-LSSM/Data'
 results_dir <- 'C:/Data/Git/Classification-LSSM/Results'
@@ -58,7 +63,7 @@ results_dir <- 'C:/Data/Git/Classification-LSSM/Results'
 source("classification_functions.R")
 
 # Sourcing here reloads FVCOM data into kd_pts. Includes reading NETCDFs, interpolations, and clipping.
-source("netCDF_processing.R")
+#source("netCDF_processing.R")
 
 # NOTES:
 # - For loading of TIFs, and the necessary subsampling, see the DFO version of the classification code.
@@ -66,8 +71,15 @@ source("netCDF_processing.R")
 
 #---- Load FVCOM point data ----
 # Loads kd_pts dataframe
-load(file = paste0(data_dir, '/FVCOM_point_data_2025-10-01_kwakwa.rData'))
+load(file = paste0(data_dir, '/FVCOM_point_data_2025-10-09_kwakwa.rData'))
 #load(file = paste0(data_dir, '/FVCOM_point_data_2025-09-11_village.rData'))
+
+# Load shape files for FCVOM bounding box (for clipping) and coastline (for plotting)
+kd_bounds <- st_read( "c:\\Data\\SpaceData\\Broughton\\FVCOM_trim.shp")
+coast     <- st_read( "c:\\Data\\SpaceData\\Broughton\\coastline.shp")
+
+# cLIP coast to bounds
+coast <- st_intersection( coast, kd_bounds )
 
 str(kd_pts)
 fv_dat <- kd_pts
@@ -85,10 +97,11 @@ colnames(fv_dat) <- sub("(^[^_]+)_([A-Z]+)_(.*)",
                         perl = TRUE)
 
 # remove (X,Y) for the analysis
-#plot( kd_pts$X, kd_pts$Y)
+#plot( kd_pts$x, kd_pts$Y)
 fv_dat    <- fv_dat[, !(names(fv_dat) %in% c("X", "Y"))]
 fv_coords <- kd_pts[, c("X", "Y")]
-colnames(fv_dat) 
+
+
 
 #---- Correlation and standardization section ----
 # Specific to extents of FCVOM used.
@@ -178,22 +191,16 @@ print(table(km_ref$cluster, align$aligned))
 # jul_clust is unchanged.
 dec_clust <- ApplyAlignment(dec_clust, align$mapping)
 
-# Would be good to use generic below. But then need to title strings.
 
-
-# See if you can set a consistent pallette.
-# Random, vivid, distinct colors (HCL space)
-random_pal <- function(K,
-                       seed = NULL,
-                       l = 65,
-                       c = 100) {
+# Create a consistent palette with vivid, distinct colors (HCL space)
+random_pal <- function(K, seed = NULL, l = 65, c = 100) {
   if (!is.null(seed))
     set.seed(seed)
   hues <- sample(seq(0, 360 - 360 / K, length.out = K))
   stats::setNames(grDevices::hcl(h = hues, c = c, l = l), as.character(1:K))
 }
 
-
+our_pal <- random_pal( nclust, seed=13 )
 
 #---- Part 3: Cluster diagnostic plots  ----
 
@@ -209,14 +216,14 @@ c_dist <- dist(jul_dat)
 sk <- silhouette(jul_clust$cluster, c_dist)
 # Call generic plot() in the r script
 plot(sk,
-     col = 1:nclust,
+     col = our_pal,
      border = NA,
      main = "")
 
 c_dist <- dist(dec_dat)
 sk <- silhouette(dec_clust$cluster, c_dist)
 plot(sk,
-     col = 1:nclust,
+     col = our_pal,
      border = NA,
      main = "")
 
@@ -236,17 +243,20 @@ dec_eigens <- round(get_eigenvalue(dec_pca[[1]]), 2)
 var_percent <- jul_eigens$variance.percent
 
 #---- Violins of predictor contributions to WORKING clusters ----
-jul_viols <- PlotViolins(jul_clust$cluster, jul_dat)
-dec_viols <- PlotViolins(dec_clust$cluster, dec_dat)
+jul_viols <- PlotViolins(jul_clust$cluster, jul_dat, our_pal)
+dec_viols <- PlotViolins(dec_clust$cluster, dec_dat, our_pal)
 
 
 #---- Part 4: Map the working point clusters ----
 # NB: Using points here. For a raster, see the DFO version.
 
-pal <- random_pal(nclust, seed = 42)   # set seed for reproducible "random"
+x <- as.factor( jul_clust$cluster )
+names( our_pal ) <- levels( x )
+theme_set(theme_gray()) # Reset ggplot() defaults
 
-jul_map <- PlotMap(fv_coords, jul_clust, "July Clusters")
-dec_map <- PlotMap(fv_coords, dec_clust, "December Clusters")
+# uses default our_pal
+jul_map <- PlotMap(fv_coords, jul_clust$cluster, "July Clusters", our_pal)
+dec_map <- PlotMap(fv_coords, dec_clust$cluster, "December Clusters", our_pal)
 
 
 #---- Knit and render Markdown file to PDF -----

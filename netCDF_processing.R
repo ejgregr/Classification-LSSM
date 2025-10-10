@@ -21,11 +21,7 @@ lapply(required.packages, require, character.only = TRUE)
 #lapply(required.packages, library, character.only = TRUE)
 
 
-#=========================== Data sources and constants =====================================
-
-# proj4 string : Albers projection, NAD83 datum
-albers_crs <- '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0'
-
+#=============== Directories Will be created if they don't exist. ==============
 nc_dir      <- 'C:/Data/SpaceData/Broughton/netcdf' 
 results_dir <- 'C:/Data/Git/Classification-LSSM/Results' 
 
@@ -142,7 +138,7 @@ InterpToGrid <- function(x, y, values, nx, ny) {
 nc_list <- list.files(path = nc_dir, pattern = '\\.nc$', full.names = TRUE)
 
 # Examining the netCDF contents  ... 
-vars <- GetNCVariables(  nc_list[1] )
+vars <- GetNCVariables( nc_list[1] )
 str(vars, max.level=1)
 
 # Each file contains salinity, temp, u, and v. 
@@ -160,8 +156,8 @@ for (file in nc_list) {
     all_data[[colname]] <- varlist[[varname]]
   }
 }
+
 # NOTE: Currents (u,v) have a different length because they are on faces. 
-#--- DATA:
 # 123,598 appears to be the number of nodes
 # 221,232 appears to be the number of faces
 
@@ -221,24 +217,26 @@ big_df <- cbind( xy, big_df )
 dim(big_df)
 
 names(big_df)
-#str(big_df)
+str(big_df)
 
-#---- Clip to specified spatial extents ----
+#---- Clip to specified spatial extents (kd_bounds) ----
 # We're going to work in UTM Zone 9 so that the clipped points can be used 
 # to then trim the rest of the data. 
 
-kd_bounds <- st_read( "c:\\Data\\SpaceData\\Broughton\\FVCOM_trim.shp")
-utm_pts <- st_as_sf(big_df, coords = c("x", "y"), crs = "+proj=utm +zone=9 +datum=WGS84 +units=m +no_defs")
-albers_pts <- st_transform(utm_pts, coords = c("x", "y"), crs = albers_crs)
+# Assign the NAD83 UTM projection
+utm_pts <- st_as_sf(big_df, coords = c("x", "y"), crs = UTM_crs )
+# Transform to BC Albers to match rest of data
+albers_pts <- st_transform(utm_pts, albers_crs)
 
 kd_pts <- albers_pts[ kd_bounds, ]
+coast <- st_intersection( coast, kd_bounds )
 # OR just use the unclipped data ... 
 # kd_pts <- albers_pts
-
 
 ggplot() +
   geom_sf(data = kd_bounds, fill = NA, color = "blue", lwd = 1) +
   geom_sf(data = kd_pts, color = "red", size = 1) +
+  geom_sf(data = coast, fill = NA, color = "black", lwd = 0.8) +
   theme_minimal()
 
 # turn kd_pts back into a df after messing about with sf points for the clip.

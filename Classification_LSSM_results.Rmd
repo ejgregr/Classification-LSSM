@@ -131,8 +131,8 @@ sk1 <- silhouette(jul_clust$cluster, jul_dist)
 dec_dist <- dist( dec_dat )
 sk2 <- silhouette(dec_clust$cluster, dec_dist)
 
-plot(sk1, col = 1:nclust, border=NA, main = "Summer clusters" ) 
-plot(sk2, col = 1:nclust, border=NA, main = "Winter clusters" )
+plot(sk1, col = our_pal, border=NA, main = "Summer clusters" ) 
+plot(sk2, col = our_pal, border=NA, main = "Winter clusters" )
 
 
 #p <- fviz_silhouette(sk, label = FALSE)  # ggplot object
@@ -151,14 +151,14 @@ plot(sk2, col = 1:nclust, border=NA, main = "Winter clusters" )
 
 
 ## Violin plots
-```{r Violplots, results='asis', echo=FALSE, fig.cap="Violin plots of predictors across the July and December k-means clusters.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
+```{r Violplots, results='asis', echo=FALSE, fig.cap="Violin plots of predictors across the July and December k-means clusters.", fig.width=7.5, fig.height=8.2, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
 ( jul_viols / dec_viols )
 
 ```
 
 
 ## Mapped clusters
-```{r mapplots, results='asis', echo=FALSE, fig.cap="Spatial distrubiton of clusters in July and December.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
+```{r mapplots, results='asis', echo=FALSE, fig.cap="Spatial distributon of clusters in July and December.", fig.width=7, fig.height=8, fig.align='center', out.extra='keepaspectratio', fig.pos='H'}
 ( jul_map / dec_map )
 
 ```

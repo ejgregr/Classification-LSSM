@@ -8,7 +8,6 @@
 # Notes:
 #  - 2024/06/05: Updated from the almost final DFO version.
 
-
 #================================== Load require packages =================================
 
 # check for any required packages that aren't installed and install them
@@ -33,13 +32,7 @@ lapply(required.packages, require, character.only = TRUE)
 #lapply(required.packages, library, character.only = TRUE)
 
 
-#=========================== Data sources and constants =====================================
-
-# proj4 string for albers projection with NAD83 datum
-spat_ref <- '+proj=aea +lat_1=50 +lat_2=58.5 +lat_0=45 +lon_0=-126 +x_0=1000000 +y_0=0 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0'
-
 #===================================== Functions =========================================
-
 # ---- CLUSTER matching function: Align kmean cluster labels by membership overlap 
 # Will use Hungarian algorithm. Needs packages("clue"). Workflow by ChatGPT
 
@@ -76,7 +69,6 @@ AlignClusters <- function(km_ref, km_new) {
   list(mapping = mapping, aligned = aligned, contingency = M)
 }
 
-
 # mapping: named character or integer vector like c("1"="2","2"="3","3"="1")
 # Pass: the kmeans to modify and the mapping (as a perm vector from AlignClusters)
 # Returns: updated kmeans object
@@ -95,7 +87,6 @@ ApplyAlignment <- function(km, perm) {
   rownames(km2$centers) <- as.character(seq_len(k))
   km2
 }
-
 
 # Given a correlation matrix, return the highest correlation and the variable pair.
 # NOTE: Algorithm fails down at nrom(idx) when a single correlation is found in the cortable.
@@ -123,7 +114,6 @@ showHighestPairs <- function(preds, threshold) {
   }
 }
 
-
 #---- Returns a stack of integerized rasters from a raster stack ----
 Integerize <- function( in_layers, sig = 1000 ) {
   int_layers <- brick()
@@ -136,7 +126,6 @@ Integerize <- function( in_layers, sig = 1000 ) {
   names( int_layers ) <- names( in_layers )
   return( int_layers )
 }
-
 
 # Uses global variables. Relies on stack_data and transformed stack data (t_stack)
 MakeSkewTable <- function() {
@@ -168,7 +157,6 @@ MakeSkewTable <- function() {
   # )
   # Merge the data frames
 }
-
 
 # Selected FVCOM data with skews >1:
 # salt_DEC_surf_max   CS_DEC_bott_ave   CS_JUL_bott_ave   CS_JUL_surf_ave   CS_JUL_surf_max 
@@ -207,7 +195,6 @@ MakeMoreNormal <- function( dat ){
   return( dat ) 
 }
 
-
 PlotHistos <- function( adf, ptitle ){
   df_long <- pivot_longer(adf, everything(), names_to = "variable", values_to = "value")
   ggplot(df_long, aes(x = value)) +
@@ -218,7 +205,6 @@ PlotHistos <- function( adf, ptitle ){
     theme(plot.title = element_text(hjust = 0),
           axis.title.x = element_blank())
 }
-
 
 PlotHeatMap <- function( clust, dat, main_txt = "" ){
   # Define color palette
@@ -246,8 +232,7 @@ PlotHeatMap <- function( clust, dat, main_txt = "" ){
   return( z_heat )
 }
 
-
-PlotViolins <- function( clusts, dat ){
+PlotViolins <- function( clusts, dat, pal ){
   x <- dat
   x$cluster <- as.factor( clusts )
   y <- x %>%
@@ -258,6 +243,7 @@ PlotViolins <- function( clusts, dat ){
     ggplot(y, aes(x = cluster, y = value, fill = cluster)) +
     geom_violin(trim = FALSE) +
     facet_wrap(~ predictor, scales = "free_y") +
+    scale_fill_manual(values = pal) +
     theme_minimal() +
     labs(title = "",
          x = "Cluster",
@@ -266,29 +252,33 @@ PlotViolins <- function( clusts, dat ){
   return( vplots )
 }
 
-PlotMap <- function( coords, clust, titletxt) {
+PlotMap <- function(coords, clust, titletxt = "", pal, crs = albers_crs) {
+
+  stopifnot(nrow(coords) == length(clust))
   
-  pts <- data.frame(x = coords$X, y = coords$Y, cluster = clust$cluster)
-  # 32609 is the CRS for UTM Zone 9N, the projection of the FVCOM data
-  sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = 32609)  
+  # Build sf points; name the cluster column and make it a factor
+  pts <- data.frame(x = coords$X, y = coords$Y, cluster = factor(clust))
+  if (!is.null(names(pal)) && length(names(pal))) {
+    pts$cluster <- factor(pts$cluster, levels = names(pal))  # match palette names
+  }
+  sf_pts <- st_as_sf(pts, coords = c("x", "y"), crs = crs)
   
-  theme_set(theme_gray()) # Reset ggplot() defaults
-  clust_map <- ggplot(sf_pts, aes(color = factor(cluster))) +
-    geom_sf( size=0.8) + theme_minimal() +
-    labs(color = "Clusters") +
-    labs(title = titletxt, color = "Clusters") +
-    guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
-    theme(legend.position = "bottom") +
-    theme(
+  ggplot() +
+    geom_sf(data = sf_pts, aes(color = cluster), size = 0.9) +
+    geom_sf(data = coast, fill = NA, color = "grey10", linewidth = 0.5, inherit.aes = FALSE) +
+    scale_color_manual(values = pal, limits = levels(sf_pts$cluster), drop = FALSE, name = "Cluster") +
+    labs(title = titletxt, x = NULL, y = NULL) +
+    coord_sf(expand = FALSE) +
+    theme_minimal() +
+    theme( # theme grows boxes and text but not glyph size
       axis.text.x = element_text(size = 8),
       axis.text.y = element_text(size = 8),
-      legend.key.size = unit(0.6, "lines"),    # smaller legend keys (boxes/symbols)
-      legend.text = element_text(size = 8),    # smaller legend labels/text
-      legend.title = element_text(size = 10) )   # (optional) smaller legend title)
-  #  guides(color = guide_legend(override.aes = list(size = 2))) +  # controls legend point size
-  #  scale_y_continuous(expand = c(0, 0)) + scale_x_continuous(expand = c(0, 0)) 
+      legend.key.size = unit(0.9, "lines"),
+      legend.text = element_text(size = 8),
+      legend.title = element_text(size = 10)
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 2)))
 }
-
 
 
 #---- MakeScreePlot: returns a ggplot. ----
@@ -359,7 +349,7 @@ ClusterPCAall <- function( p_data ) {
   # Look at the clusters for the first 4 PCs
   a <- ggscatter(
     ind_coord, x = "Dim.1", y = "Dim.2", 
-    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    color = "cluster", palette = our_pal, ellipse = TRUE, ellipse.type = "convex",
     size = 1.5,  legend = "right", ggtheme = theme_bw(),
     xlab = paste0("Dim 1 (", var_percent[1], "% )" ),
     ylab = paste0("Dim 2 (", var_percent[2], "% )" )
@@ -378,7 +368,7 @@ ClusterPCAall <- function( p_data ) {
 
   a <- ggscatter(
     ind_coord, x = "Dim.3", y = "Dim.4", 
-    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    color = "cluster", palette = our_pal, ellipse = TRUE, ellipse.type = "convex",
     size = 1.5,  legend = "right", ggtheme = theme_bw(),
     xlab = paste0("Dim 3 (", var_percent[3], "% )" ),
     ylab = paste0("Dim 4 (", var_percent[4], "% )" )
@@ -427,7 +417,7 @@ ClusterPCA <- function( n_samp, clustnum ) {
   # Look at the clusters for the first 4 PCs
   a <- ggscatter(
     ind_coord, x = "Dim.1", y = "Dim.2", 
-    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    color = "cluster", palette = our_pal, ellipse = TRUE, ellipse.type = "convex",
     size = 1.5,  legend = "right", ggtheme = theme_bw(),
     xlab = paste0("Dim 1 (", var_percent[1], "% )" ),
     ylab = paste0("Dim 2 (", var_percent[2], "% )" )
@@ -446,7 +436,7 @@ ClusterPCA <- function( n_samp, clustnum ) {
   
   a <- ggscatter(
     ind_coord, x = "Dim.3", y = "Dim.4", 
-    color = "cluster", palette = "simpsons", ellipse = TRUE, ellipse.type = "convex",
+    color = "cluster", palette = our_pal, ellipse = TRUE, ellipse.type = "convex",
     size = 1.5,  legend = "right", ggtheme = theme_bw(),
     xlab = paste0("Dim 3 (", var_percent[3], "% )" ),
     ylab = paste0("Dim 4 (", var_percent[4], "% )" )
@@ -464,8 +454,6 @@ ClusterPCA <- function( n_samp, clustnum ) {
   print( "Done clusters ...")
   return( list(res_pca, plot1, plot2) )
 }
-
-
 
 #---- PredictClusters: returns cluster assignments for un-clustered pictures. ----
 # Assembly required with the classified pixels before plotting. Function by ChatGPT.
