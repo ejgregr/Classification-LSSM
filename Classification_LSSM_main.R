@@ -102,7 +102,6 @@ fv_dat    <- fv_dat[, !(names(fv_dat) %in% c("X", "Y"))]
 fv_coords <- kd_pts[, c("X", "Y")]
 
 
-
 #---- Correlation and standardization section ----
 # Specific to extents of FCVOM used.
 # FUNCTIONS exist for each extents to preserve the parameter selection
@@ -111,17 +110,22 @@ fv_coords <- kd_pts[, c("X", "Y")]
 # ParamKwakwakuitil - FVCOM subset for full Broughton estuary
 # ParamFVCOM        - The full FVCOM extents.
 
-
+# THE TOP DOWN approach focuses on removing correlations, with priority variables. 
 #source( 'ParamVillageSeaJul.R' )
 #source( 'ParamVillageSeaDec.R' )
+#source( 'ParamKwakwakuitilJul_topdown.R' )
+#source( 'ParamKwakwakuitilDec_topdown.R' )
+
+# BOTTOM UP approach starts with what we expect might be ecologically reasonable.
+
 
 #---- Process July predictors ----
 jul_dat <- fv_dat[, !grepl("dec", names(fv_dat))]
-source( 'ParamKwakwakuitilJul.R' )
+source( 'ParamKwakwakuitilJul_botup.R' )
 
 #---- Process December predictors ----
 dec_dat <- fv_dat[, !grepl("jul", names(fv_dat))]
-source( 'ParamKwakwakuitilDec.R' )
+source( 'ParamKwakwakuitilDec_botup.R' )
 
 hist1 / hist3
 hist2 / hist4
@@ -146,8 +150,8 @@ scree_plot2 <- MakeScreePlot(dec_dat, nclust, randomz, imax, 0)
 #---- Cluster analysis Part 2 - Create working set of N clusters ----
 
 #-- SETUP for clustering and figure labeling ----
-nclust  <- 8 # the number of clusters based on scree plot, above.
-cl_text <- "8"
+nclust  <- 4 # the number of clusters based on scree plot, above.
+cl_text <- "4"
 
 #-- RUn the clusters
 names(jul_dat)
@@ -272,7 +276,6 @@ rmarkdown::render(
   output_dir    = results_dir,
   output_file = outname
 )
-
 
 #================ STOP HERE for now ====================
 
